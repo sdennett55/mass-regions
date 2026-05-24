@@ -31,6 +31,12 @@ export const mcbRegionOrder = [
 export type MCBRegionName = (typeof mcbRegionOrder)[number];
 export type RegionScheme = "standard" | "mcb";
 export type AnyRegionName = RegionName | MCBRegionName;
+export type RegionLegendGroup = {
+  color: string;
+  region: AnyRegionName;
+  townCount: number;
+  towns: string[];
+};
 
 export const massTownToRegion: Record<string, RegionName> = {
   BARNSTABLE: "Cape Cod",
@@ -1233,8 +1239,6 @@ const compactMCBTownToRegion = new Map(
   ]),
 );
 
-const mcbRegionTownCounts = countTownsByRegion(mcbTownToRegion, mcbRegionOrder);
-
 export function getCanonicalTownId(rawTownId: string) {
   const normalizedTownId = normalizeTownId(rawTownId);
   return normalizedAliasMap[normalizedTownId] ?? normalizedTownId;
@@ -1250,9 +1254,11 @@ export function getRegionTownCount(
   region: AnyRegionName,
   scheme: RegionScheme,
 ) {
-  return scheme === "mcb"
-    ? mcbRegionTownCounts[region as MCBRegionName]
-    : regionTownCounts[region as RegionName];
+  const legendGroup = getLegendGroups(scheme).find(
+    (group) => group.region === region,
+  );
+
+  return legendGroup?.townCount ?? 0;
 }
 
 export function getRegionForTownId(
@@ -1286,4 +1292,51 @@ export function formatTownLabel(rawTownId: string) {
     .split("_")
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ");
+}
+
+function getRegionOrderForScheme(scheme: RegionScheme) {
+  return scheme === "mcb" ? mcbRegionOrder : regionOrder;
+}
+
+function getTownToRegionForScheme(scheme: RegionScheme) {
+  return scheme === "mcb" ? mcbTownToRegion : massTownToRegion;
+}
+
+function buildLegendGroups(scheme: RegionScheme): RegionLegendGroup[] {
+  const seenTowns = new Set<string>();
+  const townsByRegion = new Map<AnyRegionName, string[]>();
+
+  for (const [rawTownId, region] of Object.entries(getTownToRegionForScheme(scheme))) {
+    const canonicalTownId = getCanonicalTownId(rawTownId);
+
+    if (seenTowns.has(canonicalTownId)) {
+      continue;
+    }
+
+    seenTowns.add(canonicalTownId);
+
+    const towns = townsByRegion.get(region) ?? [];
+    towns.push(formatTownLabel(canonicalTownId));
+    townsByRegion.set(region, towns);
+  }
+
+  return getRegionOrderForScheme(scheme).map((region) => {
+    const towns = (townsByRegion.get(region) ?? []).sort((townA, townB) =>
+      townA.localeCompare(townB),
+    );
+
+    return {
+      color: getRegionColor(region, scheme),
+      region,
+      townCount: towns.length,
+      towns,
+    };
+  });
+}
+
+const standardLegendGroups = buildLegendGroups("standard");
+const mcbLegendGroups = buildLegendGroups("mcb");
+
+export function getLegendGroups(scheme: RegionScheme) {
+  return scheme === "mcb" ? mcbLegendGroups : standardLegendGroups;
 }

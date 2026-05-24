@@ -6,11 +6,12 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Settings2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Settings2, X } from 'lucide-react'
 
 import {
   formatTownLabel,
   getRegionColor,
+  getLegendGroups,
   getRegionForTownId,
   getRegionTownCount,
   type RegionScheme,
@@ -282,7 +283,9 @@ function InteractiveMap() {
   const [viewport, setViewport] = useState<Viewport | null>(null)
   const [camera, setCamera] = useState<CameraState | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [isLegendOpen, setIsLegendOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [expandedLegendRegions, setExpandedLegendRegions] = useState<string[]>([])
   const [regionScheme, setRegionScheme] = useState<RegionScheme>(
     initialSettings?.regionScheme ?? 'standard',
   )
@@ -630,6 +633,10 @@ function InteractiveMap() {
   }
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
+    if ((event.target as Element | null)?.closest('[data-ui-control="true"]')) {
+      return
+    }
+
     if (!viewport) {
       return
     }
@@ -901,6 +908,33 @@ function InteractiveMap() {
     setShowTownLabels((currentState) => !currentState)
   }
 
+  const handleLegendTogglePointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const handleLegendToggleClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    setIsSettingsOpen(false)
+    setIsLegendOpen((currentState) => {
+      if (!currentState) {
+        setExpandedLegendRegions([])
+      }
+
+      return !currentState
+    })
+  }
+
+  const handleLegendRegionToggle = (region: string) => {
+    setExpandedLegendRegions((currentRegions) =>
+      currentRegions.includes(region)
+        ? currentRegions.filter((currentRegion) => currentRegion !== region)
+        : [...currentRegions, region],
+    )
+  }
+
   const handleMCBRegionsTogglePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
@@ -912,6 +946,7 @@ function InteractiveMap() {
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
     event.stopPropagation()
+    setExpandedLegendRegions([])
     setRegionScheme((currentScheme) =>
       currentScheme === 'standard' ? 'mcb' : 'standard',
     )
@@ -925,8 +960,11 @@ function InteractiveMap() {
   const activeTownId = hoveredTownId ?? selectedTownId
   const activeTown = activeTownId ? getTownById(activeTownId) : null
   const defaultCamera = viewport ? getFitCamera(viewport) : null
+  const legendGroups = getLegendGroups(regionScheme)
   const isAtInitialView =
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
+  const shouldHideActiveTown =
+    isLegendOpen && !!viewport && viewport.width < 640
 
   return (
     <section
@@ -952,13 +990,13 @@ function InteractiveMap() {
       >
         <div
           ref={settingsPanelRef}
-          className="pointer-events-auto relative"
+          className="pointer-events-auto relative cursor-default"
           data-ui-control="true"
         >
           <button
             aria-expanded={isSettingsOpen}
             aria-haspopup="menu"
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/75 bg-white/82 text-slate-700 shadow-[0_10px_30px_rgba(15,23,42,0.14)] backdrop-blur transition hover:bg-white"
+            className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-white/75 bg-white/82 text-slate-700 shadow-[0_10px_30px_rgba(15,23,42,0.14)] backdrop-blur transition hover:bg-white"
             data-ui-control="true"
             onClick={handleSettingsButtonClick}
             onPointerDown={handleSettingsButtonPointerDown}
@@ -969,7 +1007,7 @@ function InteractiveMap() {
 
           {isSettingsOpen ? (
             <div
-              className="absolute left-0 top-full mt-2 w-[18.5rem] overflow-hidden rounded-2xl border border-white/75 bg-white/92 shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur"
+              className="absolute left-0 top-full mt-2 w-[18.5rem] cursor-default overflow-hidden rounded-2xl border border-white/75 bg-white/92 shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur"
               data-ui-control="true"
               role="menu"
             >
@@ -991,7 +1029,7 @@ function InteractiveMap() {
 
                 <button
                   aria-checked={showTownLabels}
-                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+                  className={`relative inline-flex h-7 w-12 cursor-pointer items-center rounded-full transition ${
                     showTownLabels ? 'bg-slate-950' : 'bg-slate-300'
                   }`}
                   data-ui-control="true"
@@ -1020,7 +1058,7 @@ function InteractiveMap() {
 
                 <button
                   aria-checked={regionScheme === 'mcb'}
-                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+                  className={`relative inline-flex h-7 w-12 cursor-pointer items-center rounded-full transition ${
                     regionScheme === 'mcb' ? 'bg-slate-950' : 'bg-slate-300'
                   }`}
                   data-ui-control="true"
@@ -1036,6 +1074,25 @@ function InteractiveMap() {
                   />
                 </button>
               </div>
+
+              <div className="flex items-center justify-between gap-3 border-t border-slate-200/70 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">Legend</p>
+                  <p className="text-xs font-medium text-slate-500">
+                    Browse all regions and towns
+                  </p>
+                </div>
+
+                <button
+                  className="cursor-pointer rounded-full border border-slate-200 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
+                  data-ui-control="true"
+                  onClick={handleLegendToggleClick}
+                  onPointerDown={handleLegendTogglePointerDown}
+                  type="button"
+                >
+                  {isLegendOpen ? 'Hide' : 'Open'}
+                </button>
+              </div>
             </div>
           ) : null}
         </div>
@@ -1043,7 +1100,7 @@ function InteractiveMap() {
         {!isAtInitialView ? (
           <button
             data-ui-control="true"
-            className="pointer-events-auto rounded-full border border-white/75 bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition hover:bg-slate-800"
+            className="pointer-events-auto cursor-pointer rounded-full border border-white/75 bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition hover:bg-slate-800"
             onClick={handleResetButtonClick}
             onPointerDown={handleResetButtonPointerDown}
             type="button"
@@ -1053,7 +1110,99 @@ function InteractiveMap() {
         ) : null}
       </div>
 
-      {activeTown ? (
+      {isLegendOpen ? (
+        <aside
+          className="pointer-events-auto absolute z-10 flex w-[min(24rem,calc(100vw-1.5rem))] cursor-default flex-col overflow-hidden rounded-3xl border border-white/75 bg-white/92 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
+          data-ui-control="true"
+          style={{
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
+            right: 'calc(env(safe-area-inset-right, 0px) + 0.75rem)',
+            top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+          }}
+        >
+          <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Legend</p>
+              <p className="text-xs font-medium text-slate-500">
+                {regionScheme === 'mcb' ? 'MCB regions' : 'Standard regions'}
+              </p>
+            </div>
+
+            <button
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+              data-ui-control="true"
+              onClick={() => setIsLegendOpen(false)}
+              onPointerDown={handleLegendTogglePointerDown}
+              type="button"
+            >
+              <X className="h-4 w-4" strokeWidth={2.1} />
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
+            <div className="space-y-2">
+              {legendGroups.map((group) => {
+                const isExpanded = expandedLegendRegions.includes(group.region)
+
+                return (
+                  <div
+                    key={group.region}
+                    className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90"
+                  >
+                    <button
+                      className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-3 text-left transition hover:bg-slate-50"
+                      data-ui-control="true"
+                      onClick={() => handleLegendRegionToggle(group.region)}
+                      type="button"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          aria-hidden="true"
+                          className="h-3 w-3 shrink-0 rounded-full shadow-inner shadow-black/10"
+                          style={{ backgroundColor: group.color }}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-slate-950">
+                            {group.region}
+                          </p>
+                          <p className="text-xs font-medium text-slate-500">
+                            {group.townCount} towns
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 text-slate-500">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4" strokeWidth={2.1} />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" strokeWidth={2.1} />
+                        )}
+                      </div>
+                    </button>
+
+                    {isExpanded ? (
+                      <div className="border-t border-slate-200/80 bg-slate-50/80 px-3 py-3">
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          {group.towns.map((town) => (
+                            <p
+                              key={`${group.region}-${town}`}
+                              className="text-xs font-medium text-slate-700"
+                            >
+                              {town}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </aside>
+      ) : null}
+
+      {activeTown && !shouldHideActiveTown ? (
         <div
           className="pointer-events-none absolute z-10 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/75 bg-white/86 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.14)] backdrop-blur"
           style={{
