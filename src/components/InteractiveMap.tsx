@@ -27,6 +27,7 @@ const WHEEL_COMMIT_DELAY_MS = 90
 const MAP_VIEW_STORAGE_KEY = 'mass-regions:view'
 const MAP_SETTINGS_STORAGE_KEY = 'mass-regions:settings'
 const TOUCH_HOVER_BLOCK_MS = 800
+const RENDER_BUFFER_RATIO = 0.18
 
 type Viewport = {
   width: number
@@ -37,6 +38,13 @@ type CameraState = {
   x: number
   y: number
   zoom: number
+}
+
+type RenderBox = {
+  height: number
+  width: number
+  x: number
+  y: number
 }
 
 type LocalPoint = {
@@ -107,11 +115,32 @@ function getVisibleHeight(zoom: number, viewport: Viewport) {
   return getVisibleWidth(zoom) * (viewport.height / viewport.width)
 }
 
-function getViewBoxString(camera: CameraState, viewport: Viewport) {
-  return `${camera.x} ${camera.y} ${getVisibleWidth(camera.zoom)} ${getVisibleHeight(
-    camera.zoom,
-    viewport,
-  )}`
+function getRenderBox(camera: CameraState, viewport: Viewport): RenderBox {
+  const visibleWidth = getVisibleWidth(camera.zoom)
+  const visibleHeight = getVisibleHeight(camera.zoom, viewport)
+  const padWidth = visibleWidth * RENDER_BUFFER_RATIO
+  const padHeight = visibleHeight * RENDER_BUFFER_RATIO
+
+  return {
+    height: visibleHeight + padHeight * 2,
+    width: visibleWidth + padWidth * 2,
+    x: camera.x - padWidth,
+    y: camera.y - padHeight,
+  }
+}
+
+function getRenderViewBoxString(camera: CameraState, viewport: Viewport) {
+  const renderBox = getRenderBox(camera, viewport)
+  return `${renderBox.x} ${renderBox.y} ${renderBox.width} ${renderBox.height}`
+}
+
+function getRenderLayerStyle(viewport: Viewport) {
+  return {
+    height: `${viewport.height * (1 + RENDER_BUFFER_RATIO * 2)}px`,
+    left: `${viewport.width * -RENDER_BUFFER_RATIO}px`,
+    top: `${viewport.height * -RENDER_BUFFER_RATIO}px`,
+    width: `${viewport.width * (1 + RENDER_BUFFER_RATIO * 2)}px`,
+  }
 }
 
 function clampCamera(camera: CameraState, viewport: Viewport): CameraState {
@@ -246,17 +275,19 @@ function getPreviewMatrix(
   previewCamera: CameraState,
   viewport: Viewport,
 ) {
-  const committedWidth = getVisibleWidth(committedCamera.zoom)
-  const committedHeight = getVisibleHeight(committedCamera.zoom, viewport)
-  const previewWidth = getVisibleWidth(previewCamera.zoom)
-  const previewHeight = getVisibleHeight(previewCamera.zoom, viewport)
+  const committedRenderBox = getRenderBox(committedCamera, viewport)
+  const previewRenderBox = getRenderBox(previewCamera, viewport)
+  const renderWidth = viewport.width * (1 + RENDER_BUFFER_RATIO * 2)
+  const renderHeight = viewport.height * (1 + RENDER_BUFFER_RATIO * 2)
 
-  const scaleX = committedWidth / previewWidth
-  const scaleY = committedHeight / previewHeight
+  const scaleX = committedRenderBox.width / previewRenderBox.width
+  const scaleY = committedRenderBox.height / previewRenderBox.height
   const translateX =
-    ((committedCamera.x - previewCamera.x) / previewWidth) * viewport.width
+    ((committedRenderBox.x - previewRenderBox.x) / previewRenderBox.width) *
+    renderWidth
   const translateY =
-    ((committedCamera.y - previewCamera.y) / previewHeight) * viewport.height
+    ((committedRenderBox.y - previewRenderBox.y) / previewRenderBox.height) *
+    renderHeight
 
   return {
     scaleX,
@@ -451,7 +482,7 @@ function InteractiveMap() {
     const svgElement = mapLayerRef.current?.querySelector('svg')
 
     if (svgElement) {
-      svgElement.setAttribute('viewBox', getViewBoxString(clampedCamera, viewport))
+      svgElement.setAttribute('viewBox', getRenderViewBoxString(clampedCamera, viewport))
     }
 
     saveStoredCamera(clampedCamera)
@@ -549,7 +580,7 @@ function InteractiveMap() {
 
       const svgElement = mapLayerRef.current?.querySelector('svg')
       if (svgElement) {
-        svgElement.setAttribute('viewBox', getViewBoxString(nextCamera, nextViewport))
+        svgElement.setAttribute('viewBox', getRenderViewBoxString(nextCamera, nextViewport))
       }
 
       setCamera((currentCamera) =>
@@ -988,6 +1019,7 @@ function InteractiveMap() {
   const activeTown = activeTownId ? getTownById(activeTownId) : null
   const defaultCamera = viewport ? getFitCamera(viewport) : null
   const legendGroups = getLegendGroups()
+  const mapLayerStyle = viewport ? getRenderLayerStyle(viewport) : undefined
   const isAtInitialView =
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
   const shouldHideActiveTown =
@@ -1228,7 +1260,8 @@ function InteractiveMap() {
       {camera && viewport ? (
         <div
           ref={mapLayerRef}
-          className="absolute inset-0 origin-top-left [contain:layout_paint_size]"
+          className="absolute origin-top-left [contain:layout_paint_size]"
+          style={mapLayerStyle}
         >
           <MassachusettsMap
             aria-label="Map of Massachusetts towns colored by region"
@@ -1236,7 +1269,7 @@ function InteractiveMap() {
             preserveAspectRatio="xMidYMid meet"
             role="img"
             showTownLabels={showTownLabels}
-            viewBox={getViewBoxString(camera, viewport)}
+            viewBox={getRenderViewBoxString(camera, viewport)}
           />
         </div>
       ) : null}
