@@ -1,12 +1,21 @@
 import { memo, type SVGProps, useEffect, useRef } from "react";
 
-import { getRegionForTownId, regionColors } from "../data/massRegions";
+import {
+  getRegionColor,
+  getRegionForTownId,
+  type RegionScheme,
+} from "../data/massRegions";
 
 type MapProps = SVGProps<SVGSVGElement> & {
   showTownLabels?: boolean;
+  regionScheme?: RegionScheme;
 };
 
-const SvgComponent = ({ showTownLabels = true, ...props }: MapProps) => {
+const SvgComponent = ({
+  regionScheme = "standard",
+  showTownLabels = true,
+  ...props
+}: MapProps) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -19,7 +28,7 @@ const SvgComponent = ({ showTownLabels = true, ...props }: MapProps) => {
     const textLabels = svg.querySelectorAll<SVGTextElement>("text");
 
     for (const path of townPaths) {
-      const region = getRegionForTownId(path.id);
+      const region = getRegionForTownId(path.id, regionScheme);
 
       if (!region) {
         continue;
@@ -27,7 +36,7 @@ const SvgComponent = ({ showTownLabels = true, ...props }: MapProps) => {
 
       path.dataset.region = region;
       path.style.cursor = "pointer";
-      path.style.fill = regionColors[region];
+      path.style.fill = getRegionColor(region, regionScheme);
       path.style.transition = "fill 160ms ease";
     }
 
@@ -36,7 +45,7 @@ const SvgComponent = ({ showTownLabels = true, ...props }: MapProps) => {
       textLabel.style.userSelect = "none";
       textLabel.style.display = showTownLabels ? "" : "none";
     }
-  }, [showTownLabels]);
+  }, [regionScheme, showTownLabels]);
 
   return (
     <svg
@@ -48,7 +57,6 @@ const SvgComponent = ({ showTownLabels = true, ...props }: MapProps) => {
       height={1300}
       {...props}
     >
-      <title id="title14923">{"Massachusetts Cities and Towns"}</title>
       <g
         id="g14955"
         style={{

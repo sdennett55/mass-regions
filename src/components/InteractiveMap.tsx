@@ -10,8 +10,10 @@ import { Settings2 } from 'lucide-react'
 
 import {
   formatTownLabel,
+  getRegionColor,
   getRegionForTownId,
-  regionColors,
+  getRegionTownCount,
+  type RegionScheme,
 } from '../data/massRegions'
 import MassachusettsMap from './Map'
 
@@ -23,6 +25,7 @@ const PAN_SAFE_AREA_X = SVG_WIDTH / 2
 const PAN_SAFE_AREA_Y = SVG_HEIGHT / 2
 const WHEEL_COMMIT_DELAY_MS = 90
 const MAP_VIEW_STORAGE_KEY = 'mass-regions:view'
+const MAP_SETTINGS_STORAGE_KEY = 'mass-regions:settings'
 
 type Viewport = {
   width: number
@@ -41,8 +44,11 @@ type LocalPoint = {
 }
 
 type ActiveTown = {
-  region: keyof typeof regionColors
+  region: string
+  regionColor: string
+  regionTownCount: number
   town: string
+  townId: string
 }
 
 type PanGesture = {
@@ -62,6 +68,11 @@ type PinchGesture = {
 }
 
 type GestureState = PanGesture | PinchGesture | null
+
+type StoredMapSettings = {
+  regionScheme: RegionScheme
+  showTownLabels: boolean
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
@@ -143,10 +154,6 @@ function areCamerasEqual(a: CameraState, b: CameraState) {
   )
 }
 
-function areActiveTownsEqual(a: ActiveTown | null, b: ActiveTown | null) {
-  return a?.town === b?.town && a?.region === b?.region
-}
-
 function loadStoredCamera() {
   if (typeof window === 'undefined') {
     return null
@@ -189,6 +196,50 @@ function saveStoredCamera(camera: CameraState) {
   }
 }
 
+function loadStoredMapSettings(): StoredMapSettings | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const rawSettings = window.sessionStorage.getItem(MAP_SETTINGS_STORAGE_KEY)
+    if (!rawSettings) {
+      return null
+    }
+
+    const parsedSettings = JSON.parse(rawSettings) as Partial<StoredMapSettings>
+    if (
+      (parsedSettings.regionScheme !== 'standard' &&
+        parsedSettings.regionScheme !== 'mcb') ||
+      typeof parsedSettings.showTownLabels !== 'boolean'
+    ) {
+      return null
+    }
+
+    return {
+      regionScheme: parsedSettings.regionScheme,
+      showTownLabels: parsedSettings.showTownLabels,
+    }
+  } catch {
+    return null
+  }
+}
+
+function saveStoredMapSettings(settings: StoredMapSettings) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      MAP_SETTINGS_STORAGE_KEY,
+      JSON.stringify(settings),
+    )
+  } catch {
+    // Ignore storage failures so interaction keeps working in private/locked-down contexts.
+  }
+}
+
 function getPreviewMatrix(
   committedCamera: CameraState,
   previewCamera: CameraState,
@@ -215,6 +266,7 @@ function getPreviewMatrix(
 }
 
 function InteractiveMap() {
+  const initialSettings = loadStoredMapSettings()
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const mapLayerRef = useRef<HTMLDivElement | null>(null)
   const settingsPanelRef = useRef<HTMLDivElement | null>(null)
@@ -231,9 +283,14 @@ function InteractiveMap() {
   const [camera, setCamera] = useState<CameraState | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [showTownLabels, setShowTownLabels] = useState(true)
-  const [hoveredTown, setHoveredTown] = useState<ActiveTown | null>(null)
-  const [selectedTown, setSelectedTown] = useState<ActiveTown | null>(null)
+  const [regionScheme, setRegionScheme] = useState<RegionScheme>(
+    initialSettings?.regionScheme ?? 'standard',
+  )
+  const [showTownLabels, setShowTownLabels] = useState(
+    initialSettings?.showTownLabels ?? true,
+  )
+  const [hoveredTownId, setHoveredTownId] = useState<string | null>(null)
+  const [selectedTownId, setSelectedTownId] = useState<string | null>(null)
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
@@ -249,15 +306,15 @@ function InteractiveMap() {
     }
   }
 
-  const updateHoveredTown = (nextTown: ActiveTown | null) => {
-    setHoveredTown((currentTown) =>
-      areActiveTownsEqual(currentTown, nextTown) ? currentTown : nextTown,
+  const updateHoveredTownId = (nextTownId: string | null) => {
+    setHoveredTownId((currentTownId) =>
+      currentTownId === nextTownId ? currentTownId : nextTownId,
     )
   }
 
-  const updateSelectedTown = (nextTown: ActiveTown | null) => {
-    setSelectedTown((currentTown) =>
-      areActiveTownsEqual(currentTown, nextTown) ? currentTown : nextTown,
+  const updateSelectedTownId = (nextTownId: string | null) => {
+    setSelectedTownId((currentTownId) =>
+      currentTownId === nextTownId ? currentTownId : nextTownId,
     )
   }
 
@@ -294,7 +351,22 @@ function InteractiveMap() {
   const getDisplayedCamera = () =>
     previewCameraRef.current ?? committedCameraRef.current
 
-  const getTownFromEventTarget = (target: EventTarget | null): ActiveTown | null => {
+  const getTownById = (rawTownId: string): ActiveTown | null => {
+    const region = getRegionForTownId(rawTownId, regionScheme)
+    if (!region) {
+      return null
+    }
+
+    return {
+      region,
+      regionColor: getRegionColor(region, regionScheme),
+      regionTownCount: getRegionTownCount(region, regionScheme),
+      town: formatTownLabel(rawTownId),
+      townId: rawTownId,
+    }
+  }
+
+  const getTownIdFromEventTarget = (target: EventTarget | null): string | null => {
     if (!(target instanceof Element)) {
       return null
     }
@@ -304,15 +376,7 @@ function InteractiveMap() {
       return null
     }
 
-    const region = getRegionForTownId(townPath.id)
-    if (!region) {
-      return null
-    }
-
-    return {
-      region,
-      town: formatTownLabel(townPath.id),
-    }
+    return townPath.id
   }
 
   const writePreviewCamera = (nextCamera: CameraState) => {
@@ -401,8 +465,8 @@ function InteractiveMap() {
     gestureRef.current = null
     setIsDragging(false)
     setIsSettingsOpen(false)
-    updateHoveredTown(null)
-    updateSelectedTown(null)
+    updateHoveredTownId(null)
+    updateSelectedTownId(null)
     commitPreviewCamera(getFitCamera(viewport))
   }
 
@@ -433,6 +497,13 @@ function InteractiveMap() {
       window.removeEventListener('keydown', handleWindowKeyDown)
     }
   }, [isSettingsOpen])
+
+  useEffect(() => {
+    saveStoredMapSettings({
+      regionScheme,
+      showTownLabels,
+    })
+  }, [regionScheme, showTownLabels])
 
   useEffect(() => {
     const element = viewportRef.current
@@ -554,7 +625,7 @@ function InteractiveMap() {
     }
 
     setMapHitTestingEnabled(false)
-    updateHoveredTown(null)
+    updateHoveredTownId(null)
     setIsDragging(true)
   }
 
@@ -673,7 +744,7 @@ function InteractiveMap() {
 
       if (moved && !wasMoved) {
         setMapHitTestingEnabled(false)
-        updateHoveredTown(null)
+        updateHoveredTownId(null)
       }
 
       schedulePreviewCamera(nextCamera)
@@ -714,7 +785,7 @@ function InteractiveMap() {
       )
 
       schedulePreviewCamera(nextCamera)
-      updateHoveredTown(null)
+      updateHoveredTownId(null)
     }
   }
 
@@ -728,7 +799,7 @@ function InteractiveMap() {
       event.type === 'pointerup' &&
       currentGesture?.kind === 'pan' &&
       !currentGesture.moved
-        ? getTownFromEventTarget(event.target)
+        ? getTownIdFromEventTarget(event.target)
         : null
 
     pointersRef.current.delete(event.pointerId)
@@ -750,8 +821,8 @@ function InteractiveMap() {
       }
     } else if (currentGesture?.kind === 'pan') {
       if (releasedTown) {
-        updateSelectedTown(releasedTown)
-        updateHoveredTown(releasedTown)
+        updateSelectedTownId(releasedTown)
+        updateHoveredTownId(releasedTown)
       }
 
       commitPreviewCamera(previewCameraRef.current)
@@ -777,7 +848,7 @@ function InteractiveMap() {
 
   const handlePointerLeave = () => {
     if (!gestureRef.current) {
-      updateHoveredTown(null)
+      updateHoveredTownId(null)
     }
   }
 
@@ -786,7 +857,7 @@ function InteractiveMap() {
       return
     }
 
-    updateHoveredTown(getTownFromEventTarget(event.target))
+    updateHoveredTownId(getTownIdFromEventTarget(event.target))
   }
 
   const handlePointerOut = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -794,7 +865,7 @@ function InteractiveMap() {
       return
     }
 
-    updateHoveredTown(getTownFromEventTarget(event.relatedTarget))
+    updateHoveredTownId(getTownIdFromEventTarget(event.relatedTarget))
   }
 
   const handleResetButtonPointerDown = (
@@ -830,12 +901,29 @@ function InteractiveMap() {
     setShowTownLabels((currentState) => !currentState)
   }
 
+  const handleMCBRegionsTogglePointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const handleMCBRegionsToggleClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation()
+    setRegionScheme((currentScheme) =>
+      currentScheme === 'standard' ? 'mcb' : 'standard',
+    )
+  }
+
   const handleResetButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
     resetView()
   }
 
-  const activeTown = hoveredTown ?? selectedTown
+  const activeTownId = hoveredTownId ?? selectedTownId
+  const activeTown = activeTownId ? getTownById(activeTownId) : null
   const defaultCamera = viewport ? getFitCamera(viewport) : null
   const isAtInitialView =
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
@@ -881,7 +969,7 @@ function InteractiveMap() {
 
           {isSettingsOpen ? (
             <div
-              className="absolute left-0 top-full mt-2 w-[17rem] overflow-hidden rounded-2xl border border-white/75 bg-white/92 shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur"
+              className="absolute left-0 top-full mt-2 w-[18.5rem] overflow-hidden rounded-2xl border border-white/75 bg-white/92 shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur"
               data-ui-control="true"
               role="menu"
             >
@@ -891,7 +979,7 @@ function InteractiveMap() {
                 </p>
               </div>
 
-              <div className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-950">
                     Town names
@@ -915,6 +1003,35 @@ function InteractiveMap() {
                   <span
                     className={`h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition ${
                       showTownLabels ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">
+                    MCB regions
+                  </p>
+                  <p className="text-xs font-medium text-slate-500">
+                    Use the 6-region MCB map
+                  </p>
+                </div>
+
+                <button
+                  aria-checked={regionScheme === 'mcb'}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+                    regionScheme === 'mcb' ? 'bg-slate-950' : 'bg-slate-300'
+                  }`}
+                  data-ui-control="true"
+                  onClick={handleMCBRegionsToggleClick}
+                  onPointerDown={handleMCBRegionsTogglePointerDown}
+                  role="switch"
+                  type="button"
+                >
+                  <span
+                    className={`h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition ${
+                      regionScheme === 'mcb' ? 'translate-x-6' : 'translate-x-1'
                     }`}
                   />
                 </button>
@@ -949,14 +1066,14 @@ function InteractiveMap() {
             <span
               aria-hidden="true"
               className="h-3.5 w-3.5 rounded-full shadow-inner shadow-black/10"
-              style={{ backgroundColor: regionColors[activeTown.region] }}
+              style={{ backgroundColor: activeTown.regionColor }}
             />
             <div>
               <p className="text-sm font-semibold text-slate-950">
                 {activeTown.town}
               </p>
               <p className="text-xs font-medium text-slate-600">
-                {activeTown.region}
+                {activeTown.region} ({activeTown.regionTownCount} towns)
               </p>
             </div>
           </div>
@@ -972,6 +1089,7 @@ function InteractiveMap() {
             aria-label="Map of Massachusetts towns colored by region"
             className="block h-full w-full select-none"
             preserveAspectRatio="xMidYMid meet"
+            regionScheme={regionScheme}
             role="img"
             showTownLabels={showTownLabels}
             viewBox={getViewBoxString(camera, viewport)}
