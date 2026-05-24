@@ -26,6 +26,7 @@ const PAN_SAFE_AREA_Y = SVG_HEIGHT / 2
 const WHEEL_COMMIT_DELAY_MS = 90
 const MAP_VIEW_STORAGE_KEY = 'mass-regions:view'
 const MAP_SETTINGS_STORAGE_KEY = 'mass-regions:settings'
+const TOUCH_HOVER_BLOCK_MS = 800
 
 type Viewport = {
   width: number
@@ -54,9 +55,11 @@ type ActiveTown = {
 type PanGesture = {
   kind: 'pan'
   moved: boolean
+  pointerType: string
   pointerId: number
   startCamera: CameraState
   startPoint: LocalPoint
+  startTownId: string | null
 }
 
 type PinchGesture = {
@@ -90,6 +93,10 @@ function midpoint(a: LocalPoint, b: LocalPoint): LocalPoint {
 
 function distance(a: LocalPoint, b: LocalPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+function getPanMoveThreshold(pointerType: string) {
+  return pointerType === 'touch' ? 8 : 3
 }
 
 function getVisibleWidth(zoom: number) {
@@ -272,6 +279,7 @@ function InteractiveMap() {
   const pendingPreviewCameraRef = useRef<CameraState | null>(null)
   const committedCameraRef = useRef<CameraState | null>(null)
   const previewCameraRef = useRef<CameraState | null>(null)
+  const lastTouchInteractionTimeRef = useRef(0)
 
   const [viewport, setViewport] = useState<Viewport | null>(null)
   const [camera, setCamera] = useState<CameraState | null>(null)
@@ -310,6 +318,16 @@ function InteractiveMap() {
       currentTownId === nextTownId ? currentTownId : nextTownId,
     )
   }
+
+  const markTouchInteraction = () => {
+    lastTouchInteractionTimeRef.current = Date.now()
+  }
+
+  const shouldIgnoreHover = (pointerType: string) =>
+    pointerType !== 'mouse' ||
+    !!gestureRef.current ||
+    pointersRef.current.size > 0 ||
+    Date.now() - lastTouchInteractionTimeRef.current < TOUCH_HOVER_BLOCK_MS
 
   const setMapHitTestingEnabled = (enabled: boolean) => {
     if (!mapLayerRef.current) {
@@ -550,7 +568,12 @@ function InteractiveMap() {
     }
   }, [])
 
-  const beginPanGesture = (pointerId: number, startPoint: LocalPoint) => {
+  const beginPanGesture = (
+    pointerId: number,
+    pointerType: string,
+    startPoint: LocalPoint,
+    startTownId: string | null,
+  ) => {
     const startCamera = getDisplayedCamera()
     if (!startCamera) {
       return
@@ -559,9 +582,11 @@ function InteractiveMap() {
     gestureRef.current = {
       kind: 'pan',
       moved: false,
+      pointerType,
       pointerId,
       startCamera,
       startPoint,
+      startTownId,
     }
 
     setIsDragging(true)
@@ -576,9 +601,11 @@ function InteractiveMap() {
     gestureRef.current = {
       kind: 'pan',
       moved: true,
+      pointerType: 'touch',
       pointerId,
       startCamera,
       startPoint,
+      startTownId: null,
     }
 
     setMapHitTestingEnabled(false)
@@ -675,6 +702,11 @@ function InteractiveMap() {
 
     clearWheelCommitTimer()
 
+    if (event.pointerType === 'touch') {
+      markTouchInteraction()
+      updateHoveredTownId(null)
+    }
+
     const point = getLocalPoint(event.clientX, event.clientY)
     if (!point) {
       return
@@ -684,7 +716,12 @@ function InteractiveMap() {
     event.currentTarget.setPointerCapture(event.pointerId)
 
     if (pointersRef.current.size === 1) {
-      beginPanGesture(event.pointerId, point)
+      beginPanGesture(
+        event.pointerId,
+        event.pointerType,
+        point,
+        getTownIdFromEventTarget(event.target),
+      )
       return
     }
 
@@ -713,7 +750,10 @@ function InteractiveMap() {
       const deltaX = point.x - gestureRef.current.startPoint.x
       const deltaY = point.y - gestureRef.current.startPoint.y
       const wasMoved = gestureRef.current.moved
-      const moved = wasMoved || Math.hypot(deltaX, deltaY) > 3
+      const moved =
+        wasMoved ||
+        Math.hypot(deltaX, deltaY) >
+          getPanMoveThreshold(gestureRef.current.pointerType)
       const visibleWidth = getVisibleWidth(gestureRef.current.startCamera.zoom)
       const visibleHeight = getVisibleHeight(
         gestureRef.current.startCamera.zoom,
@@ -791,12 +831,18 @@ function InteractiveMap() {
     }
 
     const currentGesture = gestureRef.current
-    const releasedTown =
+    const isTouchGesture = currentGesture?.kind === 'pan' && currentGesture.pointerType === 'touch'
+    const releasedTownId =
       event.type === 'pointerup' &&
       currentGesture?.kind === 'pan' &&
       !currentGesture.moved
         ? getTownIdFromEventTarget(event.target)
         : null
+
+    if (event.pointerType === 'touch') {
+      markTouchInteraction()
+      updateHoveredTownId(null)
+    }
 
     pointersRef.current.delete(event.pointerId)
 
@@ -816,9 +862,18 @@ function InteractiveMap() {
         beginPinchGesture()
       }
     } else if (currentGesture?.kind === 'pan') {
-      if (releasedTown) {
-        updateSelectedTownId(releasedTown)
-        updateHoveredTownId(releasedTown)
+      const tappedTownId =
+        currentGesture.startTownId &&
+        releasedTownId === currentGesture.startTownId
+          ? currentGesture.startTownId
+          : null
+
+      if (tappedTownId) {
+        updateSelectedTownId(tappedTownId)
+
+        if (!isTouchGesture) {
+          updateHoveredTownId(tappedTownId)
+        }
       }
 
       commitPreviewCamera(previewCameraRef.current)
@@ -849,7 +904,7 @@ function InteractiveMap() {
   }
 
   const handlePointerOver = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'touch' || gestureRef.current || pointersRef.current.size) {
+    if (shouldIgnoreHover(event.pointerType)) {
       return
     }
 
@@ -857,7 +912,7 @@ function InteractiveMap() {
   }
 
   const handlePointerOut = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === 'touch' || gestureRef.current || pointersRef.current.size) {
+    if (shouldIgnoreHover(event.pointerType)) {
       return
     }
 
