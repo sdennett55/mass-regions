@@ -14,7 +14,6 @@ import {
   getLegendGroups,
   getRegionForTownId,
   getRegionTownCount,
-  type RegionScheme,
 } from '../data/massRegions'
 import MassachusettsMap from './Map'
 
@@ -71,7 +70,6 @@ type PinchGesture = {
 type GestureState = PanGesture | PinchGesture | null
 
 type StoredMapSettings = {
-  regionScheme: RegionScheme
   showTownLabels: boolean
 }
 
@@ -209,16 +207,11 @@ function loadStoredMapSettings(): StoredMapSettings | null {
     }
 
     const parsedSettings = JSON.parse(rawSettings) as Partial<StoredMapSettings>
-    if (
-      (parsedSettings.regionScheme !== 'standard' &&
-        parsedSettings.regionScheme !== 'mcb') ||
-      typeof parsedSettings.showTownLabels !== 'boolean'
-    ) {
+    if (typeof parsedSettings.showTownLabels !== 'boolean') {
       return null
     }
 
     return {
-      regionScheme: parsedSettings.regionScheme,
       showTownLabels: parsedSettings.showTownLabels,
     }
   } catch {
@@ -286,9 +279,6 @@ function InteractiveMap() {
   const [isLegendOpen, setIsLegendOpen] = useState(false)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [expandedLegendRegions, setExpandedLegendRegions] = useState<string[]>([])
-  const [regionScheme, setRegionScheme] = useState<RegionScheme>(
-    initialSettings?.regionScheme ?? 'standard',
-  )
   const [showTownLabels, setShowTownLabels] = useState(
     initialSettings?.showTownLabels ?? true,
   )
@@ -355,15 +345,15 @@ function InteractiveMap() {
     previewCameraRef.current ?? committedCameraRef.current
 
   const getTownById = (rawTownId: string): ActiveTown | null => {
-    const region = getRegionForTownId(rawTownId, regionScheme)
+    const region = getRegionForTownId(rawTownId)
     if (!region) {
       return null
     }
 
     return {
       region,
-      regionColor: getRegionColor(region, regionScheme),
-      regionTownCount: getRegionTownCount(region, regionScheme),
+      regionColor: getRegionColor(region),
+      regionTownCount: getRegionTownCount(region),
       town: formatTownLabel(rawTownId),
       townId: rawTownId,
     }
@@ -503,10 +493,9 @@ function InteractiveMap() {
 
   useEffect(() => {
     saveStoredMapSettings({
-      regionScheme,
       showTownLabels,
     })
-  }, [regionScheme, showTownLabels])
+  }, [showTownLabels])
 
   useEffect(() => {
     const element = viewportRef.current
@@ -935,23 +924,6 @@ function InteractiveMap() {
     )
   }
 
-  const handleMCBRegionsTogglePointerDown = (
-    event: ReactPointerEvent<HTMLButtonElement>,
-  ) => {
-    event.preventDefault()
-    event.stopPropagation()
-  }
-
-  const handleMCBRegionsToggleClick = (
-    event: ReactMouseEvent<HTMLButtonElement>,
-  ) => {
-    event.stopPropagation()
-    setExpandedLegendRegions([])
-    setRegionScheme((currentScheme) =>
-      currentScheme === 'standard' ? 'mcb' : 'standard',
-    )
-  }
-
   const handleResetButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
     resetView()
@@ -960,7 +932,7 @@ function InteractiveMap() {
   const activeTownId = hoveredTownId ?? selectedTownId
   const activeTown = activeTownId ? getTownById(activeTownId) : null
   const defaultCamera = viewport ? getFitCamera(viewport) : null
-  const legendGroups = getLegendGroups(regionScheme)
+  const legendGroups = getLegendGroups()
   const isAtInitialView =
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
   const shouldHideActiveTown =
@@ -1048,35 +1020,6 @@ function InteractiveMap() {
 
               <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-950">
-                    MCB regions
-                  </p>
-                  <p className="text-xs font-medium text-slate-500">
-                    Use the 6-region MCB map
-                  </p>
-                </div>
-
-                <button
-                  aria-checked={regionScheme === 'mcb'}
-                  className={`relative inline-flex h-7 w-12 cursor-pointer items-center rounded-full transition ${
-                    regionScheme === 'mcb' ? 'bg-slate-950' : 'bg-slate-300'
-                  }`}
-                  data-ui-control="true"
-                  onClick={handleMCBRegionsToggleClick}
-                  onPointerDown={handleMCBRegionsTogglePointerDown}
-                  role="switch"
-                  type="button"
-                >
-                  <span
-                    className={`h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition ${
-                      regionScheme === 'mcb' ? 'translate-x-6' : 'translate-x-1'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 border-t border-slate-200/70 px-4 py-3">
-                <div>
                   <p className="text-sm font-semibold text-slate-950">Legend</p>
                   <p className="text-xs font-medium text-slate-500">
                     Browse all regions and towns
@@ -1123,9 +1066,7 @@ function InteractiveMap() {
           <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3">
             <div>
               <p className="text-sm font-semibold text-slate-950">Legend</p>
-              <p className="text-xs font-medium text-slate-500">
-                {regionScheme === 'mcb' ? 'MCB regions' : 'Standard regions'}
-              </p>
+              <p className="text-xs font-medium text-slate-500">All regions</p>
             </div>
 
             <button
@@ -1238,7 +1179,6 @@ function InteractiveMap() {
             aria-label="Map of Massachusetts towns colored by region"
             className="block h-full w-full select-none"
             preserveAspectRatio="xMidYMid meet"
-            regionScheme={regionScheme}
             role="img"
             showTownLabels={showTownLabels}
             viewBox={getViewBoxString(camera, viewport)}

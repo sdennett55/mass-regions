@@ -3,16 +3,13 @@ import { memo, type SVGProps, useEffect, useRef } from "react";
 import {
   getRegionColor,
   getRegionForTownId,
-  type RegionScheme,
 } from "../data/massRegions";
 
 type MapProps = SVGProps<SVGSVGElement> & {
   showTownLabels?: boolean;
-  regionScheme?: RegionScheme;
 };
 
 const SvgComponent = ({
-  regionScheme = "standard",
   showTownLabels = true,
   ...props
 }: MapProps) => {
@@ -28,7 +25,7 @@ const SvgComponent = ({
     const textLabels = svg.querySelectorAll<SVGTextElement>("text");
 
     for (const path of townPaths) {
-      const region = getRegionForTownId(path.id, regionScheme);
+      const region = getRegionForTownId(path.id);
 
       if (!region) {
         continue;
@@ -36,7 +33,7 @@ const SvgComponent = ({
 
       path.dataset.region = region;
       path.style.cursor = "pointer";
-      path.style.fill = getRegionColor(region, regionScheme);
+      path.style.fill = getRegionColor(region);
       path.style.transition = "fill 160ms ease";
     }
 
@@ -45,7 +42,7 @@ const SvgComponent = ({
       textLabel.style.userSelect = "none";
       textLabel.style.display = showTownLabels ? "" : "none";
     }
-  }, [regionScheme, showTownLabels]);
+  }, [showTownLabels]);
 
   return (
     <svg
