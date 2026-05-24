@@ -417,6 +417,10 @@ const normalizedAliasMap: Record<string, string> = {
   MTWASHINGTON: 'MOUNT_WASHINGTON',
 }
 
+const townDisplayNameOverrides: Record<string, string> = {
+  MANCHESTER_BY_THE_SEA: 'Manchester-by-the-Sea',
+}
+
 const compactTownToRegion = new Map(
   Object.entries(massTownToRegion).map(([town, region]) => [
     town.replace(/_/g, ''),
@@ -455,13 +459,30 @@ export function normalizeTownId(rawTownId: string) {
     .replace(/[\s-]+/g, '_')
 }
 
-export function getRegionForTownId(rawTownId: string): RegionName | undefined {
+export function getCanonicalTownId(rawTownId: string) {
   const normalizedTownId = normalizeTownId(rawTownId)
-  const canonicalTownId =
-    normalizedAliasMap[normalizedTownId] ?? normalizedTownId
+  return normalizedAliasMap[normalizedTownId] ?? normalizedTownId
+}
+
+export function getRegionForTownId(rawTownId: string): RegionName | undefined {
+  const canonicalTownId = getCanonicalTownId(rawTownId)
 
   return (
     massTownToRegion[canonicalTownId] ??
     compactTownToRegion.get(canonicalTownId.replace(/_/g, ''))
   )
+}
+
+export function formatTownLabel(rawTownId: string) {
+  const canonicalTownId = getCanonicalTownId(rawTownId)
+
+  if (townDisplayNameOverrides[canonicalTownId]) {
+    return townDisplayNameOverrides[canonicalTownId]
+  }
+
+  return canonicalTownId
+    .toLowerCase()
+    .split('_')
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ')
 }
