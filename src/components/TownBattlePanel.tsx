@@ -61,7 +61,7 @@ function TownBattlePanel({
 
   return (
     <aside
-      className="pointer-events-auto absolute z-10 w-[min(26rem,calc(100vw-1.5rem))] overflow-hidden rounded-3xl border border-white/75 bg-white/94 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
+      className="pointer-events-auto absolute z-10 w-[min(26rem,calc(100vw-1.5rem))] cursor-default select-text overflow-hidden rounded-3xl border border-white/75 bg-white/94 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
       data-ui-control="true"
       style={{
         bottom: "calc(env(safe-area-inset-bottom, 0px) + 0.75rem)",
@@ -114,7 +114,7 @@ function TownBattlePanel({
           </div>
 
           <button
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
             data-ui-control="true"
             onClick={onClose}
             type="button"
@@ -207,7 +207,7 @@ function TownBattlePanel({
 
         <div className="space-y-3">
           <button
-            className="w-full rounded-2xl bg-slate-950 px-3 py-3 text-sm font-semibold text-white transition enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="w-full rounded-2xl bg-slate-950 px-3 py-3 text-sm font-semibold text-white transition enabled:cursor-pointer enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             data-ui-control="true"
             disabled={!canDefend}
             onClick={onDefend}
@@ -231,7 +231,7 @@ function TownBattlePanel({
                   return (
                     <button
                       key={region}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-950 transition enabled:hover:border-slate-300 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-950 transition enabled:cursor-pointer enabled:hover:border-slate-300 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
                       data-ui-control="true"
                       disabled={!canCaptureForRegion}
                       onClick={() => onInvade(region)}

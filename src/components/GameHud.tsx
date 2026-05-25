@@ -20,7 +20,8 @@ function GameHud({
 }: GameHudProps) {
   return (
     <div
-      className="pointer-events-none absolute z-10 max-w-[min(20rem,calc(100vw-1.5rem))] rounded-3xl border border-white/75 bg-slate-950/82 px-4 py-3 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur"
+      className="pointer-events-auto absolute z-10 max-w-[min(20rem,calc(100vw-1.5rem))] cursor-default select-text rounded-3xl border border-white/75 bg-slate-950/82 px-4 py-3 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur"
+      data-ui-control="true"
       style={{
         right: "calc(env(safe-area-inset-right, 0px) + 0.75rem)",
         top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
