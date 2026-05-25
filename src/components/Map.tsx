@@ -5,6 +5,7 @@ import {
   getRegionColor,
   getRegionForTownId,
 } from "../data/massRegions";
+import type { RegionName } from "../data/massRegions";
 import type { TownVisualState } from "../game/types";
 
 type MapProps = SVGProps<SVGSVGElement> & {
@@ -52,6 +53,75 @@ function ensureContestedStripesPattern(svg: SVGSVGElement) {
   return pattern;
 }
 
+function getTownPaths(svg: SVGSVGElement, townId: string) {
+  return Array.from(svg.querySelectorAll<SVGPathElement>("path[id]")).filter(
+    (path) => getCanonicalTownId(path.id) === townId,
+  );
+}
+
+function getTownOverlays(svg: SVGSVGElement, townId: string) {
+  return Array.from(
+    svg.querySelectorAll<SVGPathElement>(`path[data-contested-overlay="${townId}"]`),
+  );
+}
+
+function applyTownPathPresentation(params: {
+  isSelectedTown: boolean;
+  path: SVGPathElement;
+  region: RegionName;
+  townVisualState: TownVisualState | undefined;
+}) {
+  const { isSelectedTown, path, region, townVisualState } = params;
+  const filterParts: string[] = [];
+
+  path.dataset.region = region;
+  path.classList.remove(
+    "town-contested",
+    "town-frontline",
+    "town-recently-captured",
+  );
+  path.style.strokeDasharray = "";
+  path.style.filter = "";
+  path.style.opacity = "1";
+  path.style.cursor = "pointer";
+  path.style.fill = getRegionColor(region);
+
+  if (townVisualState?.isContested) {
+    path.classList.add("town-contested");
+    path.style.stroke = "rgba(239, 68, 68, 0.98)";
+    path.style.strokeWidth = "0.68";
+    filterParts.push(
+      "drop-shadow(0 0 6px rgba(239,68,68,0.62))",
+      "drop-shadow(0 0 2px rgba(248,113,113,0.48))",
+    );
+  } else if (townVisualState?.isRecentlyCaptured) {
+    path.classList.add("town-recently-captured");
+    path.style.stroke = "rgba(248, 250, 252, 0.88)";
+    path.style.strokeWidth = "0.72";
+    filterParts.push("drop-shadow(0 0 4px rgba(255,255,255,0.55))");
+  } else if (townVisualState?.isFrontline) {
+    path.classList.add("town-frontline");
+    path.style.stroke = "rgba(15, 23, 42, 0.54)";
+    path.style.strokeWidth = "0.56";
+  } else {
+    path.style.stroke = "rgba(15, 23, 42, 0.18)";
+    path.style.strokeWidth = "0.28";
+  }
+
+  if (isSelectedTown) {
+    path.style.stroke = "rgba(56, 189, 248, 0.98)";
+    path.style.strokeWidth = townVisualState?.isContested ? "0.92" : "0.84";
+    filterParts.push(
+      "drop-shadow(0 0 8px rgba(56,189,248,0.9))",
+      "drop-shadow(0 0 2px rgba(15,23,42,0.3))",
+    );
+  }
+
+  path.style.filter = filterParts.join(" ");
+  path.style.transition =
+    "fill 180ms ease, stroke 180ms ease, opacity 180ms ease, filter 180ms ease";
+}
+
 const SvgComponent = ({
   selectedTownId = null,
   showTownLabels = true,
@@ -59,6 +129,9 @@ const SvgComponent = ({
   ...props
 }: MapProps) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const currentSelectedTownIdRef = useRef<string | null>(selectedTownId);
+  const previousSelectedTownIdRef = useRef<string | null>(selectedTownId);
+  currentSelectedTownIdRef.current = selectedTownId;
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -76,7 +149,12 @@ const SvgComponent = ({
     const townPaths = svg.querySelectorAll<SVGPathElement>("path[id]");
     const textLabels = svg.querySelectorAll<SVGTextElement>("text");
     const promotedTownPaths: SVGPathElement[] = [];
+    const selectedTownPaths: SVGPathElement[] = [];
     const overlayEntries: Array<{ overlay: SVGPathElement; parent: Element | null }> = [];
+    const selectedOverlayEntries: Array<{
+      overlay: SVGPathElement;
+      parent: Element | null;
+    }> = [];
 
     for (const path of townPaths) {
       const canonicalTownId = getCanonicalTownId(path.id);
@@ -87,29 +165,15 @@ const SvgComponent = ({
         continue;
       }
 
-      path.dataset.region = region;
-      path.classList.remove(
-        "town-contested",
-        "town-frontline",
-        "town-recently-captured",
-      );
-      const filterParts: string[] = [];
-      const isSelectedTown = canonicalTownId === selectedTownId;
-      path.style.strokeDasharray = "";
-      path.style.filter = "";
-      path.style.opacity = "1";
-      path.style.cursor = "pointer";
-      path.style.fill = getRegionColor(region);
+      const isSelectedTown = canonicalTownId === currentSelectedTownIdRef.current;
+      applyTownPathPresentation({
+        isSelectedTown,
+        path,
+        region,
+        townVisualState,
+      });
 
       if (townVisualState?.isContested) {
-        path.classList.add("town-contested");
-        path.style.stroke = "rgba(239, 68, 68, 0.98)";
-        path.style.strokeWidth = "0.68";
-        filterParts.push(
-          "drop-shadow(0 0 6px rgba(239,68,68,0.62))",
-          "drop-shadow(0 0 2px rgba(248,113,113,0.48))",
-        );
-
         const overlay = path.cloneNode(false) as SVGPathElement;
         overlay.removeAttribute("id");
         overlay.setAttribute("data-contested-overlay", canonicalTownId);
@@ -118,41 +182,23 @@ const SvgComponent = ({
         overlay.style.opacity = "1";
         overlay.style.pointerEvents = "none";
         overlay.style.stroke = "none";
-        overlayEntries.push({ overlay, parent: path.parentElement });
-      } else if (townVisualState?.isRecentlyCaptured) {
-        path.classList.add("town-recently-captured");
-        path.style.stroke = "rgba(248, 250, 252, 0.88)";
-        path.style.strokeWidth = "0.72";
-        filterParts.push("drop-shadow(0 0 4px rgba(255,255,255,0.55))");
-      } else if (townVisualState?.isFrontline) {
-        path.classList.add("town-frontline");
-        path.style.stroke = "rgba(15, 23, 42, 0.54)";
-        path.style.strokeWidth = "0.56";
-      } else {
-        path.style.stroke = "rgba(15, 23, 42, 0.18)";
-        path.style.strokeWidth = "0.28";
+        if (isSelectedTown) {
+          selectedOverlayEntries.push({ overlay, parent: path.parentElement });
+        } else {
+          overlayEntries.push({ overlay, parent: path.parentElement });
+        }
       }
-
-      if (isSelectedTown) {
-        path.style.stroke = "rgba(255, 255, 255, 0.98)";
-        path.style.strokeWidth = townVisualState?.isContested ? "0.92" : "0.84";
-        filterParts.push(
-          "drop-shadow(0 0 8px rgba(255,255,255,0.88))",
-          "drop-shadow(0 0 2px rgba(15,23,42,0.28))",
-        );
-      }
-
-      path.style.filter = filterParts.join(" ");
-
-      path.style.transition = "fill 180ms ease, stroke 180ms ease, opacity 180ms ease, filter 180ms ease";
 
       if (
-        isSelectedTown ||
         townVisualState?.isFrontline ||
         townVisualState?.isRecentlyCaptured ||
         townVisualState?.isContested
       ) {
         promotedTownPaths.push(path);
+      }
+
+      if (isSelectedTown) {
+        selectedTownPaths.push(path);
       }
     }
 
@@ -164,12 +210,68 @@ const SvgComponent = ({
       parent?.appendChild(overlay);
     }
 
+    for (const path of selectedTownPaths) {
+      path.parentElement?.appendChild(path);
+    }
+
+    for (const { overlay, parent } of selectedOverlayEntries) {
+      parent?.appendChild(overlay);
+    }
+
     for (const textLabel of textLabels) {
       textLabel.style.pointerEvents = "none";
       textLabel.style.userSelect = "none";
       textLabel.style.display = showTownLabels ? "" : "none";
     }
-  }, [selectedTownId, showTownLabels, townVisualStates]);
+  }, [showTownLabels, townVisualStates]);
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) {
+      return;
+    }
+
+    const previousSelectedTownId = previousSelectedTownIdRef.current;
+    const townIdsToRefresh = new Set<string>();
+
+    if (previousSelectedTownId) {
+      townIdsToRefresh.add(previousSelectedTownId);
+    }
+
+    if (selectedTownId) {
+      townIdsToRefresh.add(selectedTownId);
+    }
+
+    for (const townId of townIdsToRefresh) {
+      const townVisualState = townVisualStates?.[townId];
+
+      for (const path of getTownPaths(svg, townId)) {
+        const region = townVisualState?.currentRegion ?? getRegionForTownId(path.id);
+        if (!region) {
+          continue;
+        }
+
+        applyTownPathPresentation({
+          isSelectedTown: townId === selectedTownId,
+          path,
+          region,
+          townVisualState,
+        });
+      }
+    }
+
+    if (selectedTownId) {
+      for (const path of getTownPaths(svg, selectedTownId)) {
+        path.parentElement?.appendChild(path);
+      }
+
+      for (const overlay of getTownOverlays(svg, selectedTownId)) {
+        overlay.parentElement?.appendChild(overlay);
+      }
+    }
+
+    previousSelectedTownIdRef.current = selectedTownId;
+  }, [selectedTownId, townVisualStates]);
 
   return (
     <svg
@@ -2420,7 +2522,7 @@ const SvgComponent = ({
           style={{ fillRule: "evenodd" }}
         />
         <path
-          id="NORTH_ATTLEBORO"
+          id="NORTH_ATTLEBOROUGH"
           d="m668.531 314.836 2.687 4.983 2.368 4.399-17.225 16.085-9.916 7.522-1.782 1.403.01-24.178 1.734-.038 2.63-.038 9.901-5.128 9.593-5.01"
           style={{ fillRule: "evenodd" }}
         />
