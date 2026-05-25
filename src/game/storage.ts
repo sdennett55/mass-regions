@@ -8,6 +8,7 @@ import type { PlayerState, SeasonState } from "./types"
 
 const REFILL_ACTION_POINTS_QUERY_PARAM = "refillActionPoints"
 const LEGACY_REFILL_ACTION_POINTS_QUERY_PARAM = "refillInfluence"
+const RESET_GAME_QUERY_PARAM = "resetGame"
 
 function canUseStorage() {
   return typeof window !== "undefined"
@@ -28,6 +29,26 @@ function shouldRefillActionPointsFromUrl() {
       refillActionPointsParam !== null &&
       refillActionPointsParam !== "0" &&
       refillActionPointsParam.toLowerCase() !== "false"
+    )
+  } catch {
+    return false
+  }
+}
+
+function shouldResetGameFromUrl() {
+  if (!canUseStorage()) {
+    return false
+  }
+
+  try {
+    const resetGameParam = new URLSearchParams(window.location.search).get(
+      RESET_GAME_QUERY_PARAM,
+    )
+
+    return (
+      resetGameParam !== null &&
+      resetGameParam !== "0" &&
+      resetGameParam.toLowerCase() !== "false"
     )
   } catch {
     return false
@@ -63,6 +84,10 @@ export function loadPlayerState(now = Date.now()) {
   }
 
   try {
+    if (shouldResetGameFromUrl()) {
+      return createPlayerState(now)
+    }
+
     if (shouldRefillActionPointsFromUrl()) {
       return createPlayerState(now)
     }
@@ -113,6 +138,10 @@ export function loadSeasonState(now = Date.now()) {
   }
 
   try {
+    if (shouldResetGameFromUrl()) {
+      return createSeasonState(now)
+    }
+
     const rawSeasonState = window.localStorage.getItem(SEASON_STATE_STORAGE_KEY)
     if (!rawSeasonState) {
       return createSeasonState(now)

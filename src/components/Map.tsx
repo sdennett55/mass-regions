@@ -1,4 +1,4 @@
-import { memo, type SVGProps, useEffect, useRef } from "react";
+import { memo, type SVGProps, useEffect, useMemo, useRef } from "react";
 
 import {
   getCanonicalTownId,
@@ -133,6 +133,11 @@ const SvgComponent = ({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const currentSelectedTownIdRef = useRef<string | null>(selectedTownId);
   const previousSelectedTownIdRef = useRef<string | null>(selectedTownId);
+  const ariaLabel = props["aria-label"];
+  const className = props.className;
+  const preserveAspectRatio = props.preserveAspectRatio;
+  const role = props.role;
+  const svgViewBox = props.viewBox;
   currentSelectedTownIdRef.current = selectedTownId;
 
   useEffect(() => {
@@ -283,15 +288,18 @@ const SvgComponent = ({
     previousSelectedTownIdRef.current = selectedTownId;
   }, [selectedTownId, townVisualStates]);
 
-  return (
+  const staticSvgElement = useMemo(() => (
     <svg
       xmlns="http://www.w3.org/2000/svg"
+      aria-label={ariaLabel}
+      className={className}
       id="svg14921"
+      preserveAspectRatio={preserveAspectRatio}
       ref={svgRef}
-      viewBox="0 0 2100 1300"
+      role={role}
+      viewBox={svgViewBox ?? "0 0 2100 1300"}
       width={2100}
       height={1300}
-      {...props}
     >
       <g
         id="g14955"
@@ -11743,7 +11751,15 @@ const SvgComponent = ({
         </text>
       </g>
     </svg>
-  );
+  ), [
+    ariaLabel,
+    className,
+    preserveAspectRatio,
+    role,
+    svgViewBox,
+  ]);
+
+  return staticSvgElement;
 };
 
 const MemoizedSvgComponent = memo(SvgComponent);
