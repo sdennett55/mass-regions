@@ -1,16 +1,59 @@
 import { memo, type SVGProps, useEffect, useRef } from "react";
 
 import {
+  getCanonicalTownId,
   getRegionColor,
   getRegionForTownId,
 } from "../data/massRegions";
+import type { TownVisualState } from "../game/types";
 
 type MapProps = SVGProps<SVGSVGElement> & {
   showTownLabels?: boolean;
+  townVisualStates?: Record<string, TownVisualState>;
 };
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const CONTESTED_STRIPES_PATTERN_ID = "contested-town-stripes";
+
+function ensureContestedStripesPattern(svg: SVGSVGElement) {
+  let pattern = svg.querySelector<SVGPatternElement>(
+    `pattern#${CONTESTED_STRIPES_PATTERN_ID}`,
+  );
+
+  if (pattern) {
+    return pattern;
+  }
+
+  let defs = svg.querySelector<SVGDefsElement>("defs");
+
+  if (!defs) {
+    defs = document.createElementNS(SVG_NS, "defs");
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  pattern = document.createElementNS(SVG_NS, "pattern");
+  pattern.setAttribute("id", CONTESTED_STRIPES_PATTERN_ID);
+  pattern.setAttribute("patternUnits", "userSpaceOnUse");
+  pattern.setAttribute("width", "5");
+  pattern.setAttribute("height", "5");
+  pattern.setAttribute("patternTransform", "rotate(135)");
+
+  const stripe = document.createElementNS(SVG_NS, "rect");
+  stripe.setAttribute("x", "0");
+  stripe.setAttribute("y", "0");
+  stripe.setAttribute("width", "1.5");
+  stripe.setAttribute("height", "5");
+  stripe.setAttribute("fill", "rgba(239, 68, 68, 0.92)");
+
+  pattern.appendChild(stripe);
+  defs.appendChild(pattern);
+
+  return pattern;
+}
 
 const SvgComponent = ({
   showTownLabels = true,
+  townVisualStates,
   ...props
 }: MapProps) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -21,20 +64,94 @@ const SvgComponent = ({
       return;
     }
 
+    ensureContestedStripesPattern(svg);
+
+    const contestedOverlays = svg.querySelectorAll<SVGPathElement>("path[data-contested-overlay]");
+    for (const overlay of contestedOverlays) {
+      overlay.remove();
+    }
+
     const townPaths = svg.querySelectorAll<SVGPathElement>("path[id]");
     const textLabels = svg.querySelectorAll<SVGTextElement>("text");
+    const promotedTownPaths: SVGPathElement[] = [];
+    const overlayEntries: Array<{ overlay: SVGPathElement; parent: Element | null }> = [];
 
     for (const path of townPaths) {
-      const region = getRegionForTownId(path.id);
+      const canonicalTownId = getCanonicalTownId(path.id);
+      const townVisualState = townVisualStates?.[canonicalTownId];
+      const region = townVisualState?.currentRegion ?? getRegionForTownId(path.id);
 
       if (!region) {
         continue;
       }
 
       path.dataset.region = region;
+      path.classList.remove(
+        "town-contested",
+        "town-frontline",
+        "town-low-stability",
+        "town-recently-captured",
+      );
+      path.style.strokeDasharray = "";
+      path.style.filter = "";
+      path.style.opacity = "1";
       path.style.cursor = "pointer";
       path.style.fill = getRegionColor(region);
-      path.style.transition = "fill 160ms ease";
+
+      if (townVisualState?.isContested) {
+        path.classList.add("town-contested");
+        path.style.stroke = "rgba(255, 255, 255, 0.96)";
+        path.style.strokeWidth = "0.68";
+
+        const overlay = path.cloneNode(false) as SVGPathElement;
+        overlay.removeAttribute("id");
+        overlay.setAttribute("data-contested-overlay", canonicalTownId);
+        overlay.classList.add("town-contested-overlay");
+        overlay.style.fill = `url(#${CONTESTED_STRIPES_PATTERN_ID})`;
+        overlay.style.opacity = "0.18";
+        overlay.style.pointerEvents = "none";
+        overlay.style.stroke = "none";
+        overlay.style.transition = "opacity 180ms ease";
+        overlayEntries.push({ overlay, parent: path.parentElement });
+      } else if (townVisualState?.isRecentlyCaptured) {
+        path.classList.add("town-recently-captured");
+        path.style.stroke = "rgba(248, 250, 252, 0.88)";
+        path.style.strokeWidth = "0.72";
+        path.style.filter = "drop-shadow(0 0 4px rgba(255,255,255,0.55))";
+      } else if (townVisualState?.isFrontline) {
+        path.classList.add("town-frontline");
+        path.style.stroke = "rgba(15, 23, 42, 0.54)";
+        path.style.strokeWidth = "0.56";
+      } else {
+        path.style.stroke = "rgba(15, 23, 42, 0.18)";
+        path.style.strokeWidth = "0.28";
+      }
+
+      if (townVisualState?.isLowStability) {
+        path.classList.add("town-low-stability");
+        path.style.filter =
+          "drop-shadow(0 0 6px rgba(251,113,133,0.56)) drop-shadow(0 0 2px rgba(251,191,36,0.42))";
+        path.style.opacity = "0.94";
+      }
+
+      path.style.transition = "fill 180ms ease, stroke 180ms ease, opacity 180ms ease, filter 180ms ease";
+
+      if (
+        townVisualState?.isFrontline ||
+        townVisualState?.isRecentlyCaptured ||
+        townVisualState?.isLowStability ||
+        townVisualState?.isContested
+      ) {
+        promotedTownPaths.push(path);
+      }
+    }
+
+    for (const path of promotedTownPaths) {
+      path.parentElement?.appendChild(path);
+    }
+
+    for (const { overlay, parent } of overlayEntries) {
+      parent?.appendChild(overlay);
     }
 
     for (const textLabel of textLabels) {
@@ -42,7 +159,7 @@ const SvgComponent = ({
       textLabel.style.userSelect = "none";
       textLabel.style.display = showTownLabels ? "" : "none";
     }
-  }, [showTownLabels]);
+  }, [showTownLabels, townVisualStates]);
 
   return (
     <svg

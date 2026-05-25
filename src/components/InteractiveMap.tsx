@@ -10,12 +10,15 @@ import { ChevronDown, ChevronRight, Settings2, X } from 'lucide-react'
 
 import {
   formatTownLabel,
+  getCanonicalTownId,
   getRegionColor,
-  getLegendGroups,
-  getRegionForTownId,
-  getRegionTownCount,
 } from '../data/massRegions'
+import { buildTownNeighbors, collectTownShapesFromSvg } from '../game/adjacency'
+import { useTerritoryGame } from '../game/useTerritoryGame'
+import type { TownBattleState, TownNeighbors } from '../game/types'
+import GameHud from './GameHud'
 import MassachusettsMap from './Map'
+import TownBattlePanel from './TownBattlePanel'
 
 const SVG_WIDTH = 2100
 const SVG_HEIGHT = 1300
@@ -53,9 +56,9 @@ type LocalPoint = {
 }
 
 type ActiveTown = {
-  region: string
+  battleState: TownBattleState
+  controlCount: number
   regionColor: string
-  regionTownCount: number
   town: string
   townId: string
 }
@@ -323,6 +326,27 @@ function InteractiveMap() {
   )
   const [hoveredTownId, setHoveredTownId] = useState<string | null>(null)
   const [selectedTownId, setSelectedTownId] = useState<string | null>(null)
+  const [townNeighbors, setTownNeighbors] = useState<TownNeighbors>({})
+
+  const {
+    contestedTownCount,
+    controlCounts,
+    frontlineTownCount,
+    getTownContext,
+    influencePoints,
+    legendGroups,
+    nextInfluenceIn,
+    onDismissSpendFeedback,
+    onDestabilize,
+    onInvade,
+    onReinforce,
+    season,
+    seasonLabel,
+    seasonTimeRemaining,
+    spendFeedbackKey,
+    statusMessage,
+    townVisualStates,
+  } = useTerritoryGame(townNeighbors)
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
@@ -394,17 +418,18 @@ function InteractiveMap() {
     previewCameraRef.current ?? committedCameraRef.current
 
   const getTownById = (rawTownId: string): ActiveTown | null => {
-    const region = getRegionForTownId(rawTownId)
-    if (!region) {
+    const canonicalTownId = getCanonicalTownId(rawTownId)
+    const battleState = season.towns[canonicalTownId]
+    if (!battleState) {
       return null
     }
 
     return {
-      region,
-      regionColor: getRegionColor(region),
-      regionTownCount: getRegionTownCount(region),
-      town: formatTownLabel(rawTownId),
-      townId: rawTownId,
+      battleState,
+      controlCount: controlCounts[battleState.currentRegion] ?? 0,
+      regionColor: getRegionColor(battleState.currentRegion),
+      town: formatTownLabel(canonicalTownId),
+      townId: canonicalTownId,
     }
   }
 
@@ -418,7 +443,15 @@ function InteractiveMap() {
       return null
     }
 
-    return townPath.id
+    return getCanonicalTownId(townPath.id)
+  }
+
+  const getTownIdAtClientPoint = (clientX: number, clientY: number) => {
+    if (typeof document === 'undefined') {
+      return null
+    }
+
+    return getTownIdFromEventTarget(document.elementFromPoint(clientX, clientY))
   }
 
   const writePreviewCamera = (nextCamera: CameraState) => {
@@ -598,6 +631,26 @@ function InteractiveMap() {
       cancelPreviewFrame()
     }
   }, [])
+
+  useEffect(() => {
+    if (Object.keys(townNeighbors).length > 0) {
+      return
+    }
+
+    const svgElement = mapLayerRef.current?.querySelector('svg')
+    if (!svgElement) {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      const shapesByTown = collectTownShapesFromSvg(svgElement)
+      setTownNeighbors(buildTownNeighbors(shapesByTown))
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+    }
+  }, [camera, townNeighbors, viewport])
 
   const beginPanGesture = (
     pointerId: number,
@@ -867,7 +920,7 @@ function InteractiveMap() {
       event.type === 'pointerup' &&
       currentGesture?.kind === 'pan' &&
       !currentGesture.moved
-        ? getTownIdFromEventTarget(event.target)
+        ? getTownIdAtClientPoint(event.clientX, event.clientY)
         : null
 
     if (event.pointerType === 'touch') {
@@ -904,6 +957,12 @@ function InteractiveMap() {
 
         if (!isTouchGesture) {
           updateHoveredTownId(tappedTownId)
+        }
+      } else if (!currentGesture.moved) {
+        updateSelectedTownId(null)
+
+        if (!isTouchGesture) {
+          updateHoveredTownId(null)
         }
       }
 
@@ -1015,10 +1074,10 @@ function InteractiveMap() {
     resetView()
   }
 
-  const activeTownId = hoveredTownId ?? selectedTownId
+  const activeTownId = selectedTownId ?? hoveredTownId
   const activeTown = activeTownId ? getTownById(activeTownId) : null
+  const selectedTownContext = selectedTownId ? getTownContext(selectedTownId) : null
   const defaultCamera = viewport ? getFitCamera(viewport) : null
-  const legendGroups = getLegendGroups()
   const mapLayerStyle = viewport ? getRenderLayerStyle(viewport) : undefined
   const isAtInitialView =
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
@@ -1040,6 +1099,15 @@ function InteractiveMap() {
       onPointerUp={finishGesture}
       onWheel={handleWheel}
     >
+      <GameHud
+        contestedTownCount={contestedTownCount}
+        frontlineTownCount={frontlineTownCount}
+        influencePoints={influencePoints}
+        nextInfluenceIn={nextInfluenceIn}
+        seasonLabel={seasonLabel}
+        seasonTimeRemaining={seasonTimeRemaining}
+      />
+
       <div
         className="pointer-events-none absolute z-10 flex items-center gap-2"
         style={{
@@ -1230,7 +1298,26 @@ function InteractiveMap() {
         </aside>
       ) : null}
 
-      {activeTown && !shouldHideActiveTown ? (
+      {selectedTownContext && !shouldHideActiveTown ? (
+        <TownBattlePanel
+          battleState={selectedTownContext.town}
+          captureProtectionRemaining={selectedTownContext.captureProtectionRemaining}
+          controlCount={controlCounts[selectedTownContext.town.currentRegion] ?? 0}
+          influenceBreakdown={selectedTownContext.influenceBreakdown}
+          influencePoints={influencePoints}
+          isCaptureProtected={selectedTownContext.isCaptureProtected}
+          neighboringTowns={selectedTownContext.neighboringTowns}
+          nextInfluenceIn={nextInfluenceIn}
+          onClose={() => updateSelectedTownId(null)}
+          onDismissSpendFeedback={onDismissSpendFeedback}
+          onDestabilize={() => onDestabilize(selectedTownContext.town.townName)}
+          onInvade={(region) => onInvade(selectedTownContext.town.townName, region)}
+          onReinforce={() => onReinforce(selectedTownContext.town.townName)}
+          spendFeedbackKey={spendFeedbackKey}
+          statusMessage={statusMessage}
+          validInvadingRegions={selectedTownContext.validInvadingRegions}
+        />
+      ) : activeTown && !shouldHideActiveTown ? (
         <div
           className="pointer-events-none absolute z-10 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/75 bg-white/86 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.14)] backdrop-blur"
           style={{
@@ -1250,7 +1337,14 @@ function InteractiveMap() {
                 {activeTown.town}
               </p>
               <p className="text-xs font-medium text-slate-600">
-                {activeTown.region} ({activeTown.regionTownCount} towns)
+                {activeTown.battleState.currentRegion} ({activeTown.controlCount} towns)
+              </p>
+              <p className="text-[11px] font-medium text-slate-500">
+                {townVisualStates[activeTown.townId]?.isCaptureProtected
+                  ? 'Captured territory'
+                  : activeTown.battleState.isContested
+                  ? 'Contested front'
+                  : `Stability ${Math.round(activeTown.battleState.stability)}/100`}
               </p>
             </div>
           </div>
@@ -1269,6 +1363,7 @@ function InteractiveMap() {
             preserveAspectRatio="xMidYMid meet"
             role="img"
             showTownLabels={showTownLabels}
+            townVisualStates={townVisualStates}
             viewBox={getRenderViewBoxString(camera, viewport)}
           />
         </div>
