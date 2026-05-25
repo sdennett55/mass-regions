@@ -1,4 +1,4 @@
-import type { RegionName } from '../data/massRegions'
+import type { RegionName } from "../data/massRegions"
 
 export type { RegionName }
 
@@ -8,8 +8,8 @@ export interface TownBattleState {
   townName: TownName
   currentRegion: RegionName
   baselineRegion: RegionName
-  influenceByRegion: Record<RegionName, number>
-  stability: number
+  contestingRegion: RegionName | null
+  captureProgress: number
   isContested: boolean
   lastCapturedAt?: number
 }
@@ -22,7 +22,7 @@ export interface SeasonState {
 }
 
 export interface PlayerState {
-  influencePoints: number
+  actionPoints: number
   lastRegeneratedAt: number
 }
 
@@ -49,12 +49,12 @@ export type RegionalClaims = Partial<Record<TownName, RegionName[]>>
 export type PlayerAction =
   | {
       townName: TownName
-      type: 'destabilize' | 'reinforce'
+      type: "defend"
     }
   | {
       invadingRegion: RegionName
       townName: TownName
-      type: 'invade'
+      type: "invade"
     }
 
 export interface ActionResult {
@@ -66,12 +66,12 @@ export interface ActionResult {
 
 export interface TownVisualState {
   currentRegion: RegionName
+  contestingRegion: RegionName | null
+  captureProgress: number
   isCaptureProtected: boolean
   isContested: boolean
   isFrontline: boolean
-  isLowStability: boolean
   isRecentlyCaptured: boolean
-  stability: number
 }
 
 export interface RegionControlGroup {
@@ -79,10 +79,4 @@ export interface RegionControlGroup {
   region: RegionName
   townCount: number
   towns: string[]
-}
-
-export interface InfluenceBreakdownEntry {
-  influence: number
-  region: RegionName
-  share: number
 }

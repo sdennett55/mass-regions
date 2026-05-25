@@ -8,6 +8,7 @@ import {
 import type { TownVisualState } from "../game/types";
 
 type MapProps = SVGProps<SVGSVGElement> & {
+  selectedTownId?: string | null;
   showTownLabels?: boolean;
   townVisualStates?: Record<string, TownVisualState>;
 };
@@ -52,6 +53,7 @@ function ensureContestedStripesPattern(svg: SVGSVGElement) {
 }
 
 const SvgComponent = ({
+  selectedTownId = null,
   showTownLabels = true,
   townVisualStates,
   ...props
@@ -89,9 +91,10 @@ const SvgComponent = ({
       path.classList.remove(
         "town-contested",
         "town-frontline",
-        "town-low-stability",
         "town-recently-captured",
       );
+      const filterParts: string[] = [];
+      const isSelectedTown = canonicalTownId === selectedTownId;
       path.style.strokeDasharray = "";
       path.style.filter = "";
       path.style.opacity = "1";
@@ -102,6 +105,10 @@ const SvgComponent = ({
         path.classList.add("town-contested");
         path.style.stroke = "rgba(239, 68, 68, 0.98)";
         path.style.strokeWidth = "0.68";
+        filterParts.push(
+          "drop-shadow(0 0 6px rgba(239,68,68,0.62))",
+          "drop-shadow(0 0 2px rgba(248,113,113,0.48))",
+        );
 
         const overlay = path.cloneNode(false) as SVGPathElement;
         overlay.removeAttribute("id");
@@ -116,7 +123,7 @@ const SvgComponent = ({
         path.classList.add("town-recently-captured");
         path.style.stroke = "rgba(248, 250, 252, 0.88)";
         path.style.strokeWidth = "0.72";
-        path.style.filter = "drop-shadow(0 0 4px rgba(255,255,255,0.55))";
+        filterParts.push("drop-shadow(0 0 4px rgba(255,255,255,0.55))");
       } else if (townVisualState?.isFrontline) {
         path.classList.add("town-frontline");
         path.style.stroke = "rgba(15, 23, 42, 0.54)";
@@ -126,19 +133,23 @@ const SvgComponent = ({
         path.style.strokeWidth = "0.28";
       }
 
-      if (townVisualState?.isLowStability) {
-        path.classList.add("town-low-stability");
-        path.style.filter =
-          "drop-shadow(0 0 6px rgba(251,113,133,0.56)) drop-shadow(0 0 2px rgba(251,191,36,0.42))";
-        path.style.opacity = "0.94";
+      if (isSelectedTown) {
+        path.style.stroke = "rgba(255, 255, 255, 0.98)";
+        path.style.strokeWidth = townVisualState?.isContested ? "0.92" : "0.84";
+        filterParts.push(
+          "drop-shadow(0 0 8px rgba(255,255,255,0.88))",
+          "drop-shadow(0 0 2px rgba(15,23,42,0.28))",
+        );
       }
+
+      path.style.filter = filterParts.join(" ");
 
       path.style.transition = "fill 180ms ease, stroke 180ms ease, opacity 180ms ease, filter 180ms ease";
 
       if (
+        isSelectedTown ||
         townVisualState?.isFrontline ||
         townVisualState?.isRecentlyCaptured ||
-        townVisualState?.isLowStability ||
         townVisualState?.isContested
       ) {
         promotedTownPaths.push(path);
@@ -158,7 +169,7 @@ const SvgComponent = ({
       textLabel.style.userSelect = "none";
       textLabel.style.display = showTownLabels ? "" : "none";
     }
-  }, [showTownLabels, townVisualStates]);
+  }, [selectedTownId, showTownLabels, townVisualStates]);
 
   return (
     <svg

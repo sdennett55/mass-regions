@@ -3,36 +3,22 @@ import {
   getRegionColor,
   regionOrder,
   type RegionName,
-} from '../data/massRegions'
+} from "../data/massRegions"
 
 import {
-  BASELINE_REGION_INFLUENCE,
-  BASELINE_STABILITY,
-  CAPTURE_INFLUENCE_DECAY_FACTOR,
+  CAPTURE_POINTS_TO_CAPTURE,
   CAPTURE_PROTECTION_WINDOW_MS,
-  CAPTURE_STABILITY_RESET,
-  CONTESTED_LEAD_THRESHOLD,
-  CONTESTED_STABILITY_THRESHOLD,
-  DESTABILIZE_AMOUNT,
-  FLIP_LEAD_REQUIRED,
-  INVADE_AMOUNT,
-  INVADE_STABILITY_DAMAGE,
-  LOW_STABILITY_THRESHOLD,
-  MAX_STABILITY,
-  MIN_STABILITY,
+  DEFEND_PROGRESS_AMOUNT,
+  INVADE_PROGRESS_AMOUNT,
   PLAYER_ACTION_COST,
-  PLAYER_MAX_INFLUENCE_POINTS,
-  PLAYER_REGEN_INTERVAL_MS,
+  PLAYER_ACTION_REGEN_INTERVAL_MS,
+  PLAYER_MAX_ACTION_POINTS,
   RECENT_CAPTURE_WINDOW_MS,
-  REINFORCE_AMOUNT,
-  REINFORCE_STABILITY_GAIN,
   SEASON_DURATION_MS,
   SEASON_EPOCH_MS,
-  STABILITY_FLIP_THRESHOLD,
-} from './constants'
+} from "./constants"
 import type {
   ActionResult,
-  InfluenceBreakdownEntry,
   PlayerAction,
   PlayerState,
   RegionControlGroup,
@@ -42,35 +28,39 @@ import type {
   TownName,
   TownNeighbors,
   TownVisualState,
-} from './types'
-import { baselineTownRegions, regionalClaims as defaultRegionalClaims } from './world'
+} from "./types"
+import { baselineTownRegions, regionalClaims as defaultRegionalClaims } from "./world"
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function createInfluenceByRegion(partial?: Partial<Record<RegionName, number>>) {
-  return Object.fromEntries(
-    regionOrder.map((region) => [region, partial?.[region] ?? 0]),
-  ) as Record<RegionName, number>
+function normalizeCaptureProgress(value: number) {
+  return clamp(Math.round(value), 0, CAPTURE_POINTS_TO_CAPTURE - 1)
 }
 
-function getInfluenceEntries(town: TownBattleState) {
-  return regionOrder
-    .map((region) => ({
-      influence: town.influenceByRegion[region] ?? 0,
-      region,
-    }))
-    .sort((a, b) => b.influence - a.influence || a.region.localeCompare(b.region))
+function clearContest(town: TownBattleState): TownBattleState {
+  return {
+    ...town,
+    captureProgress: 0,
+    contestingRegion: null,
+    isContested: false,
+  }
 }
 
-function getInfluenceLeader(town: TownBattleState) {
-  const [leader, runnerUp] = getInfluenceEntries(town)
+function normalizeResolvedTown(town: TownBattleState): TownBattleState {
+  if (town.contestingRegion === town.currentRegion) {
+    return clearContest(town)
+  }
+
+  if (!town.contestingRegion || town.captureProgress <= 0) {
+    return clearContest(town)
+  }
 
   return {
-    lead: (leader?.influence ?? 0) - (runnerUp?.influence ?? 0),
-    leader,
-    runnerUp,
+    ...town,
+    captureProgress: normalizeCaptureProgress(town.captureProgress),
+    isContested: true,
   }
 }
 
@@ -79,93 +69,157 @@ function normalizeCapturedTown(
   nextRegion: RegionName,
   now: number,
 ): TownBattleState {
-  const nextInfluenceByRegion = createInfluenceByRegion()
-
-  for (const region of regionOrder) {
-    nextInfluenceByRegion[region] = Math.round(
-      (town.influenceByRegion[region] ?? 0) * CAPTURE_INFLUENCE_DECAY_FACTOR,
-    )
-  }
-
-  nextInfluenceByRegion[nextRegion] = Math.max(
-    nextInfluenceByRegion[nextRegion],
-    BASELINE_REGION_INFLUENCE,
-  )
-
   return {
     ...town,
+    captureProgress: 0,
+    contestingRegion: null,
     currentRegion: nextRegion,
-    influenceByRegion: nextInfluenceByRegion,
+    isContested: false,
     lastCapturedAt: now,
-    stability: CAPTURE_STABILITY_RESET,
+  }
+}
+
+function coerceTownBattleState(
+  townName: TownName,
+  baselineRegion: RegionName,
+  rawTown: unknown,
+): TownBattleState | null {
+  if (!rawTown || typeof rawTown !== "object") {
+    return null
+  }
+
+  const parsedTown = rawTown as Partial<TownBattleState>
+
+  if (
+    typeof parsedTown.currentRegion !== "string" ||
+    typeof parsedTown.baselineRegion !== "string" ||
+    typeof parsedTown.captureProgress !== "number"
+  ) {
+    return null
+  }
+
+  const contestingRegion =
+    typeof parsedTown.contestingRegion === "string"
+      ? parsedTown.contestingRegion
+      : null
+  const lastCapturedAt =
+    typeof parsedTown.lastCapturedAt === "number"
+      ? parsedTown.lastCapturedAt
+      : undefined
+
+  return normalizeResolvedTown({
+    baselineRegion,
+    captureProgress: parsedTown.captureProgress,
+    contestingRegion,
+    currentRegion: parsedTown.currentRegion,
+    isContested: false,
+    lastCapturedAt,
+    townName,
+  })
+}
+
+function isResolvedTownBattleState(rawTown: unknown): rawTown is TownBattleState {
+  if (!rawTown || typeof rawTown !== "object") {
+    return false
+  }
+
+  const parsedTown = rawTown as Partial<TownBattleState>
+
+  return (
+    typeof parsedTown.townName === "string" &&
+    typeof parsedTown.currentRegion === "string" &&
+    typeof parsedTown.baselineRegion === "string" &&
+    typeof parsedTown.captureProgress === "number" &&
+    typeof parsedTown.isContested === "boolean" &&
+    (typeof parsedTown.contestingRegion === "string" ||
+      parsedTown.contestingRegion === null) &&
+    (typeof parsedTown.lastCapturedAt === "number" ||
+      typeof parsedTown.lastCapturedAt === "undefined")
+  )
+}
+
+function isResolvedSeasonState(season: SeasonState) {
+  if (!season.towns || typeof season.towns !== "object") {
+    return false
+  }
+
+  for (const townName of Object.keys(baselineTownRegions)) {
+    if (!isResolvedTownBattleState(season.towns[townName])) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function hydrateSeasonState(season: SeasonState): SeasonState | null {
+  if (
+    !season ||
+    typeof season.seasonId !== "string" ||
+    typeof season.startedAt !== "number" ||
+    typeof season.endsAt !== "number" ||
+    !season.towns ||
+    typeof season.towns !== "object"
+  ) {
+    return null
+  }
+
+  const towns = {} as Record<TownName, TownBattleState>
+
+  for (const [townName, baselineRegion] of Object.entries(baselineTownRegions)) {
+    const hydratedTown = coerceTownBattleState(
+      townName,
+      baselineRegion,
+      (season.towns as Record<string, unknown>)[townName],
+    )
+
+    if (!hydratedTown) {
+      return null
+    }
+
+    towns[townName] = hydratedTown
+  }
+
+  return {
+    endsAt: season.endsAt,
+    seasonId: season.seasonId,
+    startedAt: season.startedAt,
+    towns,
   }
 }
 
 export function isTownCaptureProtected(
-  town: Pick<TownBattleState, 'lastCapturedAt'>,
+  town: Pick<TownBattleState, "lastCapturedAt">,
   now = Date.now(),
 ) {
   return (
-    typeof town.lastCapturedAt === 'number' &&
+    typeof town.lastCapturedAt === "number" &&
     now - town.lastCapturedAt < CAPTURE_PROTECTION_WINDOW_MS
   )
 }
 
 export function getTownCaptureProtectionRemaining(
-  town: Pick<TownBattleState, 'lastCapturedAt'>,
+  town: Pick<TownBattleState, "lastCapturedAt">,
   now = Date.now(),
 ) {
-  if (!isTownCaptureProtected(town, now) || typeof town.lastCapturedAt !== 'number') {
+  if (!isTownCaptureProtected(town, now) || typeof town.lastCapturedAt !== "number") {
     return 0
   }
 
   return Math.max(0, town.lastCapturedAt + CAPTURE_PROTECTION_WINDOW_MS - now)
 }
 
-function finalizeTownBattleState(town: TownBattleState, now: number): TownBattleState {
-  const clampedTown: TownBattleState = {
-    ...town,
-    stability: clamp(town.stability, MIN_STABILITY, MAX_STABILITY),
-  }
-
-  const { lead, leader } = getInfluenceLeader(clampedTown)
-  const currentRegionInfluence = clampedTown.influenceByRegion[clampedTown.currentRegion] ?? 0
-
-  const shouldFlip =
-    !!leader &&
-    leader.region !== clampedTown.currentRegion &&
-    leader.influence > currentRegionInfluence &&
-    lead >= FLIP_LEAD_REQUIRED &&
-    clampedTown.stability <= STABILITY_FLIP_THRESHOLD
-
-  const resolvedTown = shouldFlip
-    ? normalizeCapturedTown(clampedTown, leader.region, now)
-    : clampedTown
-
-  const { lead: resolvedLead, leader: resolvedLeader } = getInfluenceLeader(resolvedTown)
-  const isCaptureProtected = isTownCaptureProtected(resolvedTown, now)
-
-  return {
-    ...resolvedTown,
-    isContested:
-      !isCaptureProtected &&
-      (resolvedTown.stability <= CONTESTED_STABILITY_THRESHOLD ||
-        (resolvedLeader?.region ?? resolvedTown.currentRegion) !== resolvedTown.currentRegion ||
-        resolvedLead <= CONTESTED_LEAD_THRESHOLD),
-  }
-}
-
 export function createPlayerState(now = Date.now()): PlayerState {
   return {
-    influencePoints: PLAYER_MAX_INFLUENCE_POINTS,
+    actionPoints: PLAYER_MAX_ACTION_POINTS,
     lastRegeneratedAt: now,
   }
 }
 
-export function regeneratePlayerInfluence(player: PlayerState, now = Date.now()) {
+export function regeneratePlayerActionPoints(player: PlayerState, now = Date.now()) {
   const safeLastRegeneratedAt = Math.min(player.lastRegeneratedAt, now)
   const elapsed = now - safeLastRegeneratedAt
-  const recoveredPoints = Math.floor(elapsed / PLAYER_REGEN_INTERVAL_MS)
+  const recoveredPoints = Math.floor(elapsed / PLAYER_ACTION_REGEN_INTERVAL_MS)
 
   if (recoveredPoints <= 0) {
     return {
@@ -174,48 +228,48 @@ export function regeneratePlayerInfluence(player: PlayerState, now = Date.now())
     }
   }
 
-  const nextInfluencePoints = Math.min(
-    PLAYER_MAX_INFLUENCE_POINTS,
-    player.influencePoints + recoveredPoints,
+  const nextActionPoints = Math.min(
+    PLAYER_MAX_ACTION_POINTS,
+    player.actionPoints + recoveredPoints,
   )
   const spentIntervals =
-    nextInfluencePoints >= PLAYER_MAX_INFLUENCE_POINTS
-      ? Math.max(0, PLAYER_MAX_INFLUENCE_POINTS - player.influencePoints)
+    nextActionPoints >= PLAYER_MAX_ACTION_POINTS
+      ? Math.max(0, PLAYER_MAX_ACTION_POINTS - player.actionPoints)
       : recoveredPoints
 
   return {
-    influencePoints: nextInfluencePoints,
+    actionPoints: nextActionPoints,
     lastRegeneratedAt:
-      safeLastRegeneratedAt + spentIntervals * PLAYER_REGEN_INTERVAL_MS,
+      safeLastRegeneratedAt + spentIntervals * PLAYER_ACTION_REGEN_INTERVAL_MS,
   }
 }
 
-export function getTimeUntilNextInfluence(player: PlayerState, now = Date.now()) {
-  const resolvedPlayer = regeneratePlayerInfluence(player, now)
+export function getTimeUntilNextActionPoint(player: PlayerState, now = Date.now()) {
+  const resolvedPlayer = regeneratePlayerActionPoints(player, now)
 
-  if (resolvedPlayer.influencePoints >= PLAYER_MAX_INFLUENCE_POINTS) {
+  if (resolvedPlayer.actionPoints >= PLAYER_MAX_ACTION_POINTS) {
     return 0
   }
 
   return Math.max(
     0,
-    PLAYER_REGEN_INTERVAL_MS - (now - resolvedPlayer.lastRegeneratedAt),
+    PLAYER_ACTION_REGEN_INTERVAL_MS - (now - resolvedPlayer.lastRegeneratedAt),
   )
 }
 
-export function spendPlayerInfluence(
+export function spendPlayerActionPoints(
   player: PlayerState,
   now = Date.now(),
   amount = PLAYER_ACTION_COST,
 ) {
-  const resolvedPlayer = regeneratePlayerInfluence(player, now)
+  const resolvedPlayer = regeneratePlayerActionPoints(player, now)
 
-  if (resolvedPlayer.influencePoints < amount) {
+  if (resolvedPlayer.actionPoints < amount) {
     return null
   }
 
   return {
-    influencePoints: resolvedPlayer.influencePoints - amount,
+    actionPoints: resolvedPlayer.actionPoints - amount,
     lastRegeneratedAt: resolvedPlayer.lastRegeneratedAt,
   }
 }
@@ -238,12 +292,10 @@ export function createTownBattleState(
 ): TownBattleState {
   return {
     baselineRegion,
+    captureProgress: 0,
+    contestingRegion: null,
     currentRegion: baselineRegion,
-    influenceByRegion: createInfluenceByRegion({
-      [baselineRegion]: BASELINE_REGION_INFLUENCE,
-    }),
     isContested: false,
-    stability: BASELINE_STABILITY,
     townName,
   }
 }
@@ -271,7 +323,11 @@ export function ensureActiveSeasonState(season: SeasonState | null | undefined, 
     return createSeasonState(now)
   }
 
-  return season
+  if (isResolvedSeasonState(season)) {
+    return season
+  }
+
+  return hydrateSeasonState(season) ?? createSeasonState(now)
 }
 
 export function getSeasonTimeRemaining(season: SeasonState, now = Date.now()) {
@@ -296,10 +352,6 @@ export function getValidInvadingRegions(params: {
     return []
   }
 
-  if (isTownCaptureProtected(town)) {
-    return []
-  }
-
   const validRegions = new Set<RegionName>()
 
   for (const neighborTown of townNeighbors[townName] ?? []) {
@@ -314,6 +366,10 @@ export function getValidInvadingRegions(params: {
 
   for (const claimRegion of claims[townName] ?? []) {
     validRegions.add(claimRegion)
+  }
+
+  if (town.contestingRegion) {
+    validRegions.add(town.contestingRegion)
   }
 
   validRegions.delete(town.currentRegion)
@@ -358,37 +414,39 @@ export function applyAction(params: {
 
   if (!currentTown) {
     return {
-      error: 'Town unavailable.',
+      error: "Town unavailable.",
       ok: false,
       season,
     }
   }
 
-  const nextInfluenceByRegion = { ...currentTown.influenceByRegion }
-  let nextStability = currentTown.stability
+  if (isTownCaptureProtected(currentTown, now)) {
+    return {
+      error: "Capture cooldown active.",
+      ok: false,
+      season,
+    }
+  }
 
-  if (action.type === 'reinforce') {
-    nextInfluenceByRegion[currentTown.currentRegion] += REINFORCE_AMOUNT
-    nextStability += REINFORCE_STABILITY_GAIN
-  } else if (action.type === 'destabilize') {
-    if (isTownCaptureProtected(currentTown, now)) {
+  let nextTown: TownBattleState
+
+  if (action.type === "defend") {
+    if (!currentTown.isContested || !currentTown.contestingRegion) {
       return {
-        error: 'Capture cooldown active.',
+        error: "No active invasion to defend.",
         ok: false,
         season,
       }
     }
 
-    nextStability -= DESTABILIZE_AMOUNT
-  } else if (action.type === 'invade') {
-    if (isTownCaptureProtected(currentTown, now)) {
-      return {
-        error: 'Capture cooldown active.',
-        ok: false,
-        season,
-      }
-    }
-
+    nextTown =
+      currentTown.captureProgress - DEFEND_PROGRESS_AMOUNT <= 0
+        ? clearContest(currentTown)
+        : normalizeResolvedTown({
+            ...currentTown,
+            captureProgress: currentTown.captureProgress - DEFEND_PROGRESS_AMOUNT,
+          })
+  } else if (action.type === "invade") {
     if (
       !canRegionInvadeTown({
         claims,
@@ -399,30 +457,37 @@ export function applyAction(params: {
       })
     ) {
       return {
-        error: 'No frontline route for that invasion.',
+        error: "No frontline route for that invasion.",
         ok: false,
         season,
       }
     }
 
-    nextInfluenceByRegion[action.invadingRegion] += INVADE_AMOUNT
-    nextStability -= INVADE_STABILITY_DAMAGE
+    if (currentTown.isContested && currentTown.contestingRegion !== action.invadingRegion) {
+      return {
+        error: "Another invasion is already underway.",
+        ok: false,
+        season,
+      }
+    }
+
+    const nextProgress = currentTown.captureProgress + INVADE_PROGRESS_AMOUNT
+
+    nextTown =
+      nextProgress >= CAPTURE_POINTS_TO_CAPTURE
+        ? normalizeCapturedTown(currentTown, action.invadingRegion, now)
+        : normalizeResolvedTown({
+            ...currentTown,
+            captureProgress: nextProgress,
+            contestingRegion: action.invadingRegion,
+          })
   } else {
     return {
-      error: 'Action unavailable.',
+      error: "Action unavailable.",
       ok: false,
       season,
     }
   }
-
-  const nextTown = finalizeTownBattleState(
-    {
-      ...currentTown,
-      influenceByRegion: nextInfluenceByRegion,
-      stability: nextStability,
-    },
-    now,
-  )
 
   return {
     ok: true,
@@ -435,22 +500,6 @@ export function applyAction(params: {
     },
     town: nextTown,
   }
-}
-
-export function getInfluenceBreakdown(town: TownBattleState): InfluenceBreakdownEntry[] {
-  const totalInfluence = regionOrder.reduce(
-    (sum, region) => sum + (town.influenceByRegion[region] ?? 0),
-    0,
-  )
-  const safeTotal = Math.max(totalInfluence, 1)
-
-  return getInfluenceEntries(town)
-    .filter((entry) => entry.influence > 0)
-    .map((entry) => ({
-      influence: entry.influence,
-      region: entry.region,
-      share: entry.influence / safeTotal,
-    }))
 }
 
 export function buildRegionControlLegend(season: SeasonState): RegionControlGroup[] {
@@ -500,22 +549,24 @@ export function buildTownVisualStates(
 ) {
   return Object.fromEntries(
     Object.values(season.towns).map((town) => {
-      const isFrontline = (townNeighbors[town.townName] ?? []).some(
-        (neighborTown) =>
-          season.towns[neighborTown] &&
-          season.towns[neighborTown].currentRegion !== town.currentRegion,
-      )
+      const isFrontline =
+        town.isContested ||
+        (townNeighbors[town.townName] ?? []).some(
+          (neighborTown) =>
+            season.towns[neighborTown] &&
+            season.towns[neighborTown].currentRegion !== town.currentRegion,
+        )
 
       const visualState: TownVisualState = {
+        captureProgress: town.captureProgress,
+        contestingRegion: town.contestingRegion,
         currentRegion: town.currentRegion,
         isCaptureProtected: isTownCaptureProtected(town, now),
         isContested: town.isContested,
         isFrontline,
-        isLowStability: town.stability <= LOW_STABILITY_THRESHOLD,
         isRecentlyCaptured:
-          typeof town.lastCapturedAt === 'number' &&
+          typeof town.lastCapturedAt === "number" &&
           now - town.lastCapturedAt <= RECENT_CAPTURE_WINDOW_MS,
-        stability: town.stability,
       }
 
       return [town.townName, visualState]
@@ -530,7 +581,7 @@ export function getNextRecentCaptureExpiryAt(
   let nextExpiryAt: number | null = null
 
   for (const town of Object.values(season.towns)) {
-    if (typeof town.lastCapturedAt !== 'number') {
+    if (typeof town.lastCapturedAt !== "number") {
       continue
     }
 

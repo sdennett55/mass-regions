@@ -37,16 +37,12 @@ body {
   animation: town-frontline-pulse 2.4s ease-in-out infinite;
 }
 
-.town-low-stability {
-  animation: town-instability-flicker 1.2s ease-in-out infinite;
-}
-
 .town-recently-captured {
   animation: town-captured-pulse 1.8s ease-in-out infinite;
 }
 
-.influence-spend-burst {
-  animation: influence-spend-burst 1.2s cubic-bezier(0.22, 1, 0.36, 1);
+.action-points-spent {
+  animation: action-points-spent 1.1s ease-out;
 }
 
 @keyframes town-frontline-pulse {
@@ -57,21 +53,6 @@ body {
 
   50% {
     stroke-opacity: 0.82;
-  }
-}
-
-@keyframes town-instability-flicker {
-  0%,
-  100% {
-    opacity: 0.92;
-  }
-
-  45% {
-    opacity: 1;
-  }
-
-  60% {
-    opacity: 0.84;
   }
 }
 
@@ -86,24 +67,16 @@ body {
   }
 }
 
-@keyframes influence-spend-burst {
+@keyframes action-points-spent {
   0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.78);
+    color: #f87171;
   }
 
-  14% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-
-  72% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
+  65% {
+    color: #f87171;
   }
 
   100% {
-    opacity: 0;
-    transform: translateY(-14px) scale(1.03);
+    color: #ffffff;
   }
 }

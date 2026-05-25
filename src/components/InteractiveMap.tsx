@@ -14,6 +14,7 @@ import {
   getRegionColor,
 } from '../data/massRegions'
 import { buildTownNeighbors, collectTownShapesFromSvg } from '../game/adjacency'
+import { CAPTURE_POINTS_TO_CAPTURE } from '../game/constants'
 import { useTerritoryGame } from '../game/useTerritoryGame'
 import type { TownBattleState, TownNeighbors } from '../game/types'
 import GameHud from './GameHud'
@@ -329,17 +330,16 @@ function InteractiveMap() {
   const [townNeighbors, setTownNeighbors] = useState<TownNeighbors>({})
 
   const {
+    actionPoints,
+    capturedTownCount,
     contestedTownCount,
     controlCounts,
-    frontlineTownCount,
     getTownContext,
-    influencePoints,
     legendGroups,
-    nextInfluenceIn,
+    nextActionPointIn,
+    onDefend,
     onDismissSpendFeedback,
-    onDestabilize,
     onInvade,
-    onReinforce,
     season,
     seasonLabel,
     seasonTimeRemaining,
@@ -1100,10 +1100,10 @@ function InteractiveMap() {
       onWheel={handleWheel}
     >
       <GameHud
+        actionPoints={actionPoints}
+        capturedTownCount={capturedTownCount}
         contestedTownCount={contestedTownCount}
-        frontlineTownCount={frontlineTownCount}
-        influencePoints={influencePoints}
-        nextInfluenceIn={nextInfluenceIn}
+        nextActionPointIn={nextActionPointIn}
         seasonLabel={seasonLabel}
         seasonTimeRemaining={seasonTimeRemaining}
       />
@@ -1300,19 +1300,17 @@ function InteractiveMap() {
 
       {selectedTownContext && !shouldHideActiveTown ? (
         <TownBattlePanel
+          actionPoints={actionPoints}
           battleState={selectedTownContext.town}
           captureProtectionRemaining={selectedTownContext.captureProtectionRemaining}
           controlCount={controlCounts[selectedTownContext.town.currentRegion] ?? 0}
-          influenceBreakdown={selectedTownContext.influenceBreakdown}
-          influencePoints={influencePoints}
           isCaptureProtected={selectedTownContext.isCaptureProtected}
           neighboringTowns={selectedTownContext.neighboringTowns}
-          nextInfluenceIn={nextInfluenceIn}
+          nextActionPointIn={nextActionPointIn}
           onClose={() => updateSelectedTownId(null)}
+          onDefend={() => onDefend(selectedTownContext.town.townName)}
           onDismissSpendFeedback={onDismissSpendFeedback}
-          onDestabilize={() => onDestabilize(selectedTownContext.town.townName)}
           onInvade={(region) => onInvade(selectedTownContext.town.townName, region)}
-          onReinforce={() => onReinforce(selectedTownContext.town.townName)}
           spendFeedbackKey={spendFeedbackKey}
           statusMessage={statusMessage}
           validInvadingRegions={selectedTownContext.validInvadingRegions}
@@ -1343,8 +1341,8 @@ function InteractiveMap() {
                 {townVisualStates[activeTown.townId]?.isCaptureProtected
                   ? 'Captured territory'
                   : activeTown.battleState.isContested
-                  ? 'Contested front'
-                  : `Stability ${Math.round(activeTown.battleState.stability)}/100`}
+                  ? `${activeTown.battleState.contestingRegion} invading (${activeTown.battleState.captureProgress}/${CAPTURE_POINTS_TO_CAPTURE})`
+                  : 'Secure territory'}
               </p>
             </div>
           </div>
@@ -1362,6 +1360,7 @@ function InteractiveMap() {
             className="block h-full w-full select-none"
             preserveAspectRatio="xMidYMid meet"
             role="img"
+            selectedTownId={selectedTownId}
             showTownLabels={showTownLabels}
             townVisualStates={townVisualStates}
             viewBox={getRenderViewBoxString(camera, viewport)}

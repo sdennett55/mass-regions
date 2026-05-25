@@ -5,28 +5,26 @@ import {
   getRegionColor,
   type RegionName,
 } from "../data/massRegions";
-import { PLAYER_ACTION_COST } from "../game/constants";
+import {
+  CAPTURE_POINTS_TO_CAPTURE,
+  PLAYER_ACTION_COST,
+  PLAYER_MAX_ACTION_POINTS,
+} from "../game/constants";
 import { formatDurationShort } from "../game/logic";
-import type {
-  InfluenceBreakdownEntry,
-  TownBattleState,
-  TownName,
-} from "../game/types";
+import type { TownBattleState, TownName } from "../game/types";
 
 type TownBattlePanelProps = {
   battleState: TownBattleState;
   captureProtectionRemaining: number;
   controlCount: number;
-  influenceBreakdown: InfluenceBreakdownEntry[];
-  influencePoints: number;
+  actionPoints: number;
   isCaptureProtected: boolean;
   neighboringTowns: TownName[];
-  nextInfluenceIn: number;
+  nextActionPointIn: number;
   onClose: () => void;
+  onDefend: () => void;
   onDismissSpendFeedback: () => void;
-  onDestabilize: () => void;
   onInvade: (region: RegionName) => void;
-  onReinforce: () => void;
   spendFeedbackKey: number | null;
   statusMessage: string | null;
   validInvadingRegions: RegionName[];
@@ -36,23 +34,30 @@ function TownBattlePanel({
   battleState,
   captureProtectionRemaining,
   controlCount,
-  influenceBreakdown,
-  influencePoints,
+  actionPoints,
   isCaptureProtected,
   neighboringTowns,
-  nextInfluenceIn,
+  nextActionPointIn,
   onClose,
+  onDefend,
   onDismissSpendFeedback,
-  onDestabilize,
   onInvade,
-  onReinforce,
   spendFeedbackKey,
   statusMessage,
   validInvadingRegions,
 }: TownBattlePanelProps) {
-  const canAct = influencePoints >= PLAYER_ACTION_COST;
-  const canContestTown = !isCaptureProtected;
-  const stabilityPercent = `${Math.max(0, Math.min(100, battleState.stability))}%`;
+  const canAct = actionPoints >= PLAYER_ACTION_COST;
+  const canDefend = canAct && battleState.isContested && !isCaptureProtected;
+  const contestPercent = `${(battleState.captureProgress / CAPTURE_POINTS_TO_CAPTURE) * 100}%`;
+  const lockedAttackerRegion =
+    battleState.isContested && !isCaptureProtected
+      ? battleState.contestingRegion
+      : null;
+  const defendLabel = isCaptureProtected
+    ? "Protected"
+    : battleState.isContested
+      ? `Defend ${battleState.currentRegion} (-1)`
+      : "No invasion to defend";
 
   return (
     <aside
@@ -91,7 +96,7 @@ function TownBattlePanel({
                   isCaptureProtected
                     ? "bg-sky-100 text-sky-800"
                     : battleState.isContested
-                      ? "bg-amber-100 text-amber-800"
+                      ? "bg-rose-100 text-rose-800"
                       : "bg-emerald-100 text-emerald-800"
                 }`}
               >
@@ -99,7 +104,7 @@ function TownBattlePanel({
                   ? "Captured"
                   : battleState.isContested
                     ? "Contested"
-                    : "Stable"}
+                    : "Secure"}
               </span>
             </div>
             <p className="mt-2 text-xs font-medium text-slate-500">
@@ -122,21 +127,30 @@ function TownBattlePanel({
       <div className="space-y-4 px-4 py-4">
         <div>
           <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            <span>Stability</span>
-            <span>{Math.round(battleState.stability)}/100</span>
+            <span>Capture meter</span>
+            <span>
+              {battleState.captureProgress}/{CAPTURE_POINTS_TO_CAPTURE}
+            </span>
           </div>
           <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-200">
             <div
               className={`h-full rounded-full transition ${
-                battleState.stability <= 32
-                  ? "bg-rose-500"
-                  : battleState.stability <= 56
-                    ? "bg-amber-400"
-                    : "bg-emerald-500"
+                isCaptureProtected
+                  ? "bg-sky-500"
+                  : battleState.isContested
+                    ? "bg-rose-500"
+                    : "bg-slate-300"
               }`}
-              style={{ width: stabilityPercent }}
+              style={{ width: contestPercent }}
             />
           </div>
+          <p className="mt-2 text-sm font-medium text-slate-700">
+            {isCaptureProtected
+              ? "Protected after capture."
+              : battleState.isContested && battleState.contestingRegion
+                ? `${battleState.contestingRegion} is attemping to capture this town.`
+                : "No active invasion."}
+          </p>
         </div>
 
         {isCaptureProtected ? (
@@ -146,47 +160,20 @@ function TownBattlePanel({
           </div>
         ) : null}
 
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Influence
-            </p>
-            <div className="mt-2 space-y-2">
-              {influenceBreakdown.map((entry) => (
-                <div key={entry.region}>
-                  <div className="flex items-center justify-between gap-3 text-xs font-medium text-slate-700">
-                    <span className="truncate">{entry.region}</span>
-                    <span>{entry.influence}</span>
-                  </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-200">
-                    <div
-                      className="h-full rounded-full transition"
-                      style={{
-                        backgroundColor: getRegionColor(entry.region),
-                        width: `${Math.max(6, entry.share * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Neighbors
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs font-medium text-slate-700">
-              {neighboringTowns.length ? (
-                neighboringTowns.map((townName) => (
-                  <p key={townName}>{formatTownLabel(townName)}</p>
-                ))
-              ) : (
-                <p className="col-span-2 text-slate-500">
-                  No direct land neighbors.
-                </p>
-              )}
-            </div>
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Neighbors
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs font-medium text-slate-700">
+            {neighboringTowns.length ? (
+              neighboringTowns.map((townName) => (
+                <p key={townName}>{formatTownLabel(townName)}</p>
+              ))
+            ) : (
+              <p className="col-span-2 text-slate-500">
+                No direct land neighbors.
+              </p>
+            )}
           </div>
         </div>
 
@@ -194,26 +181,26 @@ function TownBattlePanel({
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-300">
-                Influence Points
+                Action Points
               </p>
               <div className="mt-1 flex items-center gap-2">
-                <p className="text-lg font-semibold">{influencePoints}/20</p>
-                {spendFeedbackKey !== null ? (
-                  <span
-                    key={spendFeedbackKey}
-                    aria-hidden="true"
-                    className="influence-spend-burst pointer-events-none inline-flex rounded-full bg-rose-500/18 px-2 py-0.5 text-xs font-semibold text-rose-200"
-                    onAnimationEnd={onDismissSpendFeedback}
-                  >
-                    -1
-                  </span>
-                ) : null}
+                <p
+                  key={spendFeedbackKey ?? 0}
+                  className={`text-lg font-semibold ${
+                    spendFeedbackKey !== null ? "action-points-spent" : ""
+                  }`}
+                  onAnimationEnd={
+                    spendFeedbackKey !== null ? onDismissSpendFeedback : undefined
+                  }
+                >
+                  {actionPoints}/{PLAYER_MAX_ACTION_POINTS}
+                </p>
               </div>
             </div>
             <p className="text-right text-xs font-medium text-slate-300">
-              {nextInfluenceIn > 0
-                ? `+1 in ${formatDurationShort(nextInfluenceIn)}`
-                : "At max influence"}
+              {nextActionPointIn > 0
+                ? `+1 in ${formatDurationShort(nextActionPointIn)}`
+                : "At max points"}
             </p>
           </div>
         </div>
@@ -222,52 +209,47 @@ function TownBattlePanel({
           <button
             className="w-full rounded-2xl bg-slate-950 px-3 py-3 text-sm font-semibold text-white transition enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
             data-ui-control="true"
-            disabled={!canAct}
-            onClick={onReinforce}
+            disabled={!canDefend}
+            onClick={onDefend}
             type="button"
           >
-            Reinforce {battleState.currentRegion} (-1)
-          </button>
-
-          <button
-            className="w-full rounded-2xl bg-amber-500 px-3 py-3 text-sm font-semibold text-slate-950 transition enabled:hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-            data-ui-control="true"
-            disabled={!canAct || !canContestTown}
-            onClick={onDestabilize}
-            type="button"
-          >
-            {isCaptureProtected ? "Cooldown active" : "Destabilize (-1)"}
+            {defendLabel}
           </button>
 
           <div className="space-y-2">
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-              Valid invasions
+              Choose attacker
             </p>
-            {!canContestTown ? (
-              <div className="rounded-2xl border border-dashed border-sky-200 bg-sky-50 px-3 py-3 text-sm font-medium text-sky-900">
-                This town is protected until the capture cooldown ends.
-              </div>
-            ) : validInvadingRegions.length ? (
+            {validInvadingRegions.length ? (
               <div className="grid gap-2">
-                {validInvadingRegions.map((region) => (
-                  <button
-                    key={region}
-                    className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-950 transition enabled:hover:border-slate-300 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                    data-ui-control="true"
-                    disabled={!canAct}
-                    onClick={() => onInvade(region)}
-                    type="button"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-3 w-3 rounded-full shadow-inner shadow-black/10"
-                        style={{ backgroundColor: getRegionColor(region) }}
-                      />
-                      {region}
-                    </span>
-                    <span className="text-xs text-slate-500">Invade -1</span>
-                  </button>
-                ))}
+                {validInvadingRegions.map((region) => {
+                  const isLockedOut =
+                    !!lockedAttackerRegion && lockedAttackerRegion !== region;
+                  const canCaptureForRegion =
+                    canAct && !isCaptureProtected && !isLockedOut;
+
+                  return (
+                    <button
+                      key={region}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-950 transition enabled:hover:border-slate-300 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                      data-ui-control="true"
+                      disabled={!canCaptureForRegion}
+                      onClick={() => onInvade(region)}
+                      type="button"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="h-3 w-3 rounded-full shadow-inner shadow-black/10"
+                          style={{ backgroundColor: getRegionColor(region) }}
+                        />
+                        Capture for {region}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {isCaptureProtected ? "Protected" : isLockedOut ? "Locked" : "-1"}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-slate-200 px-3 py-3 text-sm font-medium text-slate-500">

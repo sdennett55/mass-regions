@@ -1,41 +1,40 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from "react"
 
 import {
   GAME_CLOCK_INTERVAL_MS,
   PLAYER_ACTION_COST,
-} from './constants'
+} from "./constants"
 import {
   applyAction,
   buildRegionControlLegend,
   buildTownVisualStates,
   ensureActiveSeasonState,
   formatDurationShort,
-  getTownCaptureProtectionRemaining,
-  getInfluenceBreakdown,
   getNextRecentCaptureExpiryAt,
   getRegionControlCountsFromSeason,
   getSeasonTimeRemaining,
   getSeasonWindow,
-  getTimeUntilNextInfluence,
+  getTimeUntilNextActionPoint,
+  getTownCaptureProtectionRemaining,
   getValidInvadingRegions,
-  regeneratePlayerInfluence,
-  spendPlayerInfluence,
-} from './logic'
+  regeneratePlayerActionPoints,
+  spendPlayerActionPoints,
+} from "./logic"
 import {
   ensureAnonymousPlayerId,
   loadPlayerState,
   loadSeasonState,
   savePlayerState,
   saveSeasonState,
-} from './storage'
-import type { PlayerAction, RegionName, TownName, TownNeighbors } from './types'
+} from "./storage"
+import type { PlayerAction, RegionName, TownName, TownNeighbors } from "./types"
 
 function arePlayerStatesEqual(
-  a: { influencePoints: number; lastRegeneratedAt: number },
-  b: { influencePoints: number; lastRegeneratedAt: number },
+  a: { actionPoints: number; lastRegeneratedAt: number },
+  b: { actionPoints: number; lastRegeneratedAt: number },
 ) {
   return (
-    a.influencePoints === b.influencePoints &&
+    a.actionPoints === b.actionPoints &&
     a.lastRegeneratedAt === b.lastRegeneratedAt
   )
 }
@@ -58,7 +57,7 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
 
       setNow(tickNow)
       setPlayerState((currentPlayerState) => {
-        const nextPlayerState = regeneratePlayerInfluence(currentPlayerState, tickNow)
+        const nextPlayerState = regeneratePlayerActionPoints(currentPlayerState, tickNow)
         return arePlayerStatesEqual(currentPlayerState, nextPlayerState)
           ? currentPlayerState
           : nextPlayerState
@@ -68,7 +67,6 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
 
         if (nextSeasonState !== currentSeasonState) {
           setCaptureVisualNow(tickNow)
-          setStatusMessage('New season started.')
         }
 
         return nextSeasonState
@@ -103,7 +101,7 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
   }, [statusMessage])
 
   const resolvedPlayerState = useMemo(
-    () => regeneratePlayerInfluence(playerState, now),
+    () => regeneratePlayerActionPoints(playerState, now),
     [now, playerState],
   )
   const resolvedSeasonState = useMemo(
@@ -115,8 +113,8 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
     () => getSeasonTimeRemaining(resolvedSeasonState, now),
     [now, resolvedSeasonState],
   )
-  const nextInfluenceIn = useMemo(
-    () => getTimeUntilNextInfluence(playerState, now),
+  const nextActionPointIn = useMemo(
+    () => getTimeUntilNextActionPoint(playerState, now),
     [now, playerState],
   )
   const legendGroups = useMemo(
@@ -141,8 +139,8 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
       Object.values(resolvedSeasonState.towns).filter((town) => town.isContested).length,
     [resolvedSeasonState],
   )
-  const frontlineTownCount = useMemo(
-    () => Object.values(townVisualStates).filter((town) => town.isFrontline).length,
+  const capturedTownCount = useMemo(
+    () => Object.values(townVisualStates).filter((town) => town.isCaptureProtected).length,
     [townVisualStates],
   )
 
@@ -161,38 +159,39 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
   }, [nextRecentCaptureExpiryAt])
 
   const performAction = (action: PlayerAction) => {
-    const refreshedPlayerState = regeneratePlayerInfluence(playerState, Date.now())
-    const refreshedSeasonState = ensureActiveSeasonState(seasonState, Date.now())
+    const actionNow = Date.now()
+    const refreshedPlayerState = regeneratePlayerActionPoints(playerState, actionNow)
+    const refreshedSeasonState = ensureActiveSeasonState(seasonState, actionNow)
 
-    const nextPlayerState = spendPlayerInfluence(
+    const nextPlayerState = spendPlayerActionPoints(
       refreshedPlayerState,
-      Date.now(),
+      actionNow,
       PLAYER_ACTION_COST,
     )
 
     if (!nextPlayerState) {
       setPlayerState(refreshedPlayerState)
-      setStatusMessage(`No influence. +1 in ${formatDurationShort(nextInfluenceIn)}.`)
+      setStatusMessage(`No action points. +1 in ${formatDurationShort(nextActionPointIn)}.`)
       return
     }
 
     const actionResult = applyAction({
       action,
-      now: Date.now(),
+      now: actionNow,
       season: refreshedSeasonState,
       townNeighbors,
     })
 
     if (!actionResult.ok) {
       setPlayerState(refreshedPlayerState)
-      setStatusMessage(actionResult.error ?? 'Action unavailable.')
+      setStatusMessage(actionResult.error ?? "Action unavailable.")
       return
     }
 
     setPlayerState(nextPlayerState)
     setSeasonState(actionResult.season)
-    setNow(Date.now())
-    setCaptureVisualNow(Date.now())
+    setNow(actionNow)
+    setCaptureVisualNow(actionNow)
     setSpendFeedbackKey((currentKey) => (currentKey ?? 0) + 1)
     setStatusMessage(null)
   }
@@ -207,7 +206,6 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
 
     return {
       captureProtectionRemaining: getTownCaptureProtectionRemaining(town, now),
-      influenceBreakdown: getInfluenceBreakdown(town),
       isCaptureProtected: getTownCaptureProtectionRemaining(town, now) > 0,
       neighboringTowns: townNeighbors[townName] ?? [],
       town,
@@ -220,21 +218,19 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
   }
 
   return {
+    actionPoints: resolvedPlayerState.actionPoints,
+    capturedTownCount,
     contestedTownCount,
     controlCounts,
-    frontlineTownCount,
     getTownBattleState,
     getTownContext,
-    influencePoints: resolvedPlayerState.influencePoints,
     legendGroups,
-    nextInfluenceIn,
+    nextActionPointIn,
+    onDefend: (townName: TownName) =>
+      performAction({ townName, type: "defend" }),
     onDismissSpendFeedback: () => setSpendFeedbackKey(null),
-    onDestabilize: (townName: TownName) =>
-      performAction({ townName, type: 'destabilize' }),
     onInvade: (townName: TownName, invadingRegion: RegionName) =>
-      performAction({ invadingRegion, townName, type: 'invade' }),
-    onReinforce: (townName: TownName) =>
-      performAction({ townName, type: 'reinforce' }),
+      performAction({ invadingRegion, townName, type: "invade" }),
     season: resolvedSeasonState,
     seasonLabel: `Season ${seasonWindow.seasonNumber}`,
     seasonTimeRemaining,

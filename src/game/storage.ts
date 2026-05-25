@@ -1,31 +1,33 @@
-import { createPlayerState, createSeasonState, ensureActiveSeasonState } from './logic'
+import { createPlayerState, createSeasonState, ensureActiveSeasonState } from "./logic"
 import {
   PLAYER_ID_STORAGE_KEY,
   PLAYER_STATE_STORAGE_KEY,
   SEASON_STATE_STORAGE_KEY,
-} from './constants'
-import type { PlayerState, SeasonState } from './types'
+} from "./constants"
+import type { PlayerState, SeasonState } from "./types"
 
-const REFILL_INFLUENCE_QUERY_PARAM = 'refillInfluence'
+const REFILL_ACTION_POINTS_QUERY_PARAM = "refillActionPoints"
+const LEGACY_REFILL_ACTION_POINTS_QUERY_PARAM = "refillInfluence"
 
 function canUseStorage() {
-  return typeof window !== 'undefined'
+  return typeof window !== "undefined"
 }
 
-function shouldRefillInfluenceFromUrl() {
+function shouldRefillActionPointsFromUrl() {
   if (!canUseStorage()) {
     return false
   }
 
   try {
-    const refillInfluenceParam = new URLSearchParams(window.location.search).get(
-      REFILL_INFLUENCE_QUERY_PARAM,
-    )
+    const searchParams = new URLSearchParams(window.location.search)
+    const refillActionPointsParam =
+      searchParams.get(REFILL_ACTION_POINTS_QUERY_PARAM) ??
+      searchParams.get(LEGACY_REFILL_ACTION_POINTS_QUERY_PARAM)
 
     return (
-      refillInfluenceParam !== null &&
-      refillInfluenceParam !== '0' &&
-      refillInfluenceParam.toLowerCase() !== 'false'
+      refillActionPointsParam !== null &&
+      refillActionPointsParam !== "0" &&
+      refillActionPointsParam.toLowerCase() !== "false"
     )
   } catch {
     return false
@@ -34,7 +36,7 @@ function shouldRefillInfluenceFromUrl() {
 
 export function ensureAnonymousPlayerId() {
   if (!canUseStorage()) {
-    return 'local-player'
+    return "local-player"
   }
 
   try {
@@ -44,14 +46,14 @@ export function ensureAnonymousPlayerId() {
     }
 
     const nextId =
-      typeof window.crypto?.randomUUID === 'function'
+      typeof window.crypto?.randomUUID === "function"
         ? window.crypto.randomUUID()
         : `player-${Date.now()}`
 
     window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, nextId)
     return nextId
   } catch {
-    return 'local-player'
+    return "local-player"
   }
 }
 
@@ -61,7 +63,7 @@ export function loadPlayerState(now = Date.now()) {
   }
 
   try {
-    if (shouldRefillInfluenceFromUrl()) {
+    if (shouldRefillActionPointsFromUrl()) {
       return createPlayerState(now)
     }
 
@@ -70,16 +72,22 @@ export function loadPlayerState(now = Date.now()) {
       return createPlayerState(now)
     }
 
-    const parsedPlayerState = JSON.parse(rawPlayerState) as Partial<PlayerState>
-    if (
-      typeof parsedPlayerState.influencePoints !== 'number' ||
-      typeof parsedPlayerState.lastRegeneratedAt !== 'number'
-    ) {
+    const parsedPlayerState = JSON.parse(rawPlayerState) as Partial<PlayerState> & {
+      influencePoints?: number
+    }
+    const actionPoints =
+      typeof parsedPlayerState.actionPoints === "number"
+        ? parsedPlayerState.actionPoints
+        : typeof parsedPlayerState.influencePoints === "number"
+          ? parsedPlayerState.influencePoints
+          : null
+
+    if (actionPoints === null || typeof parsedPlayerState.lastRegeneratedAt !== "number") {
       return createPlayerState(now)
     }
 
     return {
-      influencePoints: parsedPlayerState.influencePoints,
+      actionPoints,
       lastRegeneratedAt: parsedPlayerState.lastRegeneratedAt,
     }
   } catch {
@@ -111,16 +119,6 @@ export function loadSeasonState(now = Date.now()) {
     }
 
     const parsedSeasonState = JSON.parse(rawSeasonState) as SeasonState
-    if (
-      !parsedSeasonState ||
-      typeof parsedSeasonState.seasonId !== 'string' ||
-      typeof parsedSeasonState.startedAt !== 'number' ||
-      typeof parsedSeasonState.endsAt !== 'number' ||
-      typeof parsedSeasonState.towns !== 'object'
-    ) {
-      return createSeasonState(now)
-    }
-
     return ensureActiveSeasonState(parsedSeasonState, now)
   } catch {
     return createSeasonState(now)
