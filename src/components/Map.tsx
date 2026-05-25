@@ -61,7 +61,9 @@ function getTownPaths(svg: SVGSVGElement, townId: string) {
 
 function getTownOverlays(svg: SVGSVGElement, townId: string) {
   return Array.from(
-    svg.querySelectorAll<SVGPathElement>(`path[data-contested-overlay="${townId}"]`),
+    svg.querySelectorAll<SVGPathElement>(
+      `path[data-contested-overlay="${townId}"]`,
+    ),
   );
 }
 
@@ -141,7 +143,9 @@ const SvgComponent = ({
 
     ensureContestedStripesPattern(svg);
 
-    const contestedOverlays = svg.querySelectorAll<SVGPathElement>("path[data-contested-overlay]");
+    const contestedOverlays = svg.querySelectorAll<SVGPathElement>(
+      "path[data-contested-overlay]",
+    );
     for (const overlay of contestedOverlays) {
       overlay.remove();
     }
@@ -150,7 +154,10 @@ const SvgComponent = ({
     const textLabels = svg.querySelectorAll<SVGTextElement>("text");
     const promotedTownPaths: SVGPathElement[] = [];
     const selectedTownPaths: SVGPathElement[] = [];
-    const overlayEntries: Array<{ overlay: SVGPathElement; parent: Element | null }> = [];
+    const overlayEntries: Array<{
+      overlay: SVGPathElement;
+      parent: Element | null;
+    }> = [];
     const selectedOverlayEntries: Array<{
       overlay: SVGPathElement;
       parent: Element | null;
@@ -159,13 +166,15 @@ const SvgComponent = ({
     for (const path of townPaths) {
       const canonicalTownId = getCanonicalTownId(path.id);
       const townVisualState = townVisualStates?.[canonicalTownId];
-      const region = townVisualState?.currentRegion ?? getRegionForTownId(path.id);
+      const region =
+        townVisualState?.currentRegion ?? getRegionForTownId(path.id);
 
       if (!region) {
         continue;
       }
 
-      const isSelectedTown = canonicalTownId === currentSelectedTownIdRef.current;
+      const isSelectedTown =
+        canonicalTownId === currentSelectedTownIdRef.current;
       applyTownPathPresentation({
         isSelectedTown,
         path,
@@ -246,7 +255,8 @@ const SvgComponent = ({
       const townVisualState = townVisualStates?.[townId];
 
       for (const path of getTownPaths(svg, townId)) {
-        const region = townVisualState?.currentRegion ?? getRegionForTownId(path.id);
+        const region =
+          townVisualState?.currentRegion ?? getRegionForTownId(path.id);
         if (!region) {
           continue;
         }
@@ -3874,7 +3884,7 @@ const SvgComponent = ({
               fontFamily: "sans-serif",
             }}
           >
-            {"ATTLEBORO"}
+            {"ATTLEBOROUGH"}
           </tspan>
         </text>
       </g>
