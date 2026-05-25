@@ -37,10 +37,6 @@ body {
   animation: town-frontline-pulse 2.4s ease-in-out infinite;
 }
 
-.town-contested-overlay {
-  animation: town-contested-overlay-pulse 3.8s ease-in-out infinite;
-}
-
 .town-low-stability {
   animation: town-instability-flicker 1.2s ease-in-out infinite;
 }
@@ -61,17 +57,6 @@ body {
 
   50% {
     stroke-opacity: 0.82;
-  }
-}
-
-@keyframes town-contested-overlay-pulse {
-  0%,
-  100% {
-    opacity: 0.16;
-  }
-
-  50% {
-    opacity: 0.54;
   }
 }
 

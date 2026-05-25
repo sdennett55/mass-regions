@@ -43,7 +43,7 @@ function ensureContestedStripesPattern(svg: SVGSVGElement) {
   stripe.setAttribute("y", "0");
   stripe.setAttribute("width", "1.5");
   stripe.setAttribute("height", "5");
-  stripe.setAttribute("fill", "rgba(239, 68, 68, 0.92)");
+  stripe.setAttribute("fill", "rgba(239, 68, 68, 0.98)");
 
   pattern.appendChild(stripe);
   defs.appendChild(pattern);
@@ -100,7 +100,7 @@ const SvgComponent = ({
 
       if (townVisualState?.isContested) {
         path.classList.add("town-contested");
-        path.style.stroke = "rgba(255, 255, 255, 0.96)";
+        path.style.stroke = "rgba(239, 68, 68, 0.98)";
         path.style.strokeWidth = "0.68";
 
         const overlay = path.cloneNode(false) as SVGPathElement;
@@ -108,10 +108,9 @@ const SvgComponent = ({
         overlay.setAttribute("data-contested-overlay", canonicalTownId);
         overlay.classList.add("town-contested-overlay");
         overlay.style.fill = `url(#${CONTESTED_STRIPES_PATTERN_ID})`;
-        overlay.style.opacity = "0.18";
+        overlay.style.opacity = "1";
         overlay.style.pointerEvents = "none";
         overlay.style.stroke = "none";
-        overlay.style.transition = "opacity 180ms ease";
         overlayEntries.push({ overlay, parent: path.parentElement });
       } else if (townVisualState?.isRecentlyCaptured) {
         path.classList.add("town-recently-captured");
