@@ -1,227 +1,340 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { GAME_CLOCK_INTERVAL_MS } from "./constants";
 import {
-  GAME_CLOCK_INTERVAL_MS,
-  PLAYER_ACTION_COST,
-} from "./constants"
-import {
-  applyAction,
   buildRegionControlLegend,
   buildTownVisualStates,
-  ensureActiveSeasonState,
   formatDurationShort,
-  getNextRecentCaptureExpiryAt,
-  getRegionControlCountsFromSeason,
+  getNextTownVisualExpiryAt,
   getSeasonTimeRemaining,
-  getSeasonWindow,
   getTimeUntilNextActionPoint,
   getTownCaptureProtectionRemaining,
   getValidInvadingRegions,
   regeneratePlayerActionPoints,
-  spendPlayerActionPoints,
-} from "./logic"
+} from "./logic";
 import {
-  ensureAnonymousPlayerId,
-  loadPlayerState,
-  loadSeasonState,
-  savePlayerState,
-  saveSeasonState,
-} from "./storage"
-import type { PlayerAction, RegionName, TownName, TownNeighbors } from "./types"
+  createInitialServerSnapshot,
+  fetchServerSnapshot,
+  openServerEvents,
+  postServerAction,
+} from "./serverClient";
+import { ensureAnonymousPlayerId } from "./storage";
+import { sharedTownNeighbors } from "./townNeighbors";
+import type { ServerGameSnapshot } from "./serverProtocol";
+import type { PlayerAction, RegionName, TownName } from "./types";
 
-function arePlayerStatesEqual(
-  a: { actionPoints: number; lastRegeneratedAt: number },
-  b: { actionPoints: number; lastRegeneratedAt: number },
-) {
-  return (
-    a.actionPoints === b.actionPoints &&
-    a.lastRegeneratedAt === b.lastRegeneratedAt
-  )
+type ServerClockAnchor = {
+  clientTime: number;
+  serverTime: number;
+};
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
-export function useTerritoryGame(townNeighbors: TownNeighbors) {
-  const [now, setNow] = useState(() => Date.now())
-  const [captureVisualNow, setCaptureVisualNow] = useState(() => Date.now())
-  const [playerState, setPlayerState] = useState(() => loadPlayerState(Date.now()))
-  const [seasonState, setSeasonState] = useState(() => loadSeasonState(Date.now()))
-  const [spendFeedbackKey, setSpendFeedbackKey] = useState<number | null>(null)
-  const [statusMessage, setStatusMessage] = useState<string | null>(null)
+function getApproxServerNow(anchor: ServerClockAnchor, clientNow: number) {
+  return anchor.serverTime + (clientNow - anchor.clientTime);
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+export function useTerritoryGame() {
+  const [playerId] = useState(() => ensureAnonymousPlayerId());
+  const [clientNow, setClientNow] = useState(() => Date.now());
+  const [snapshot, setSnapshot] = useState<ServerGameSnapshot>(() =>
+    createInitialServerSnapshot(Date.now()),
+  );
+  const [clockAnchor, setClockAnchor] = useState<ServerClockAnchor>(() => {
+    const now = Date.now();
+    return {
+      clientTime: now,
+      serverTime: now,
+    };
+  });
+  const [captureVisualServerNow, setCaptureVisualServerNow] = useState(
+    () => Date.now(),
+  );
+  const [spendFeedbackKey, setSpendFeedbackKey] = useState<number | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const actionInFlightRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
+  const clockAnchorRef = useRef(clockAnchor);
+  const snapshotRef = useRef(snapshot);
 
   useEffect(() => {
-    ensureAnonymousPlayerId()
-  }, [])
+    clockAnchorRef.current = clockAnchor;
+  }, [clockAnchor]);
+
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+
+  const applySnapshot = useCallback((nextSnapshot: ServerGameSnapshot) => {
+    const receivedAt = Date.now();
+    const nextClockAnchor = {
+      clientTime: receivedAt,
+      serverTime: nextSnapshot.serverTime,
+    };
+
+    clockAnchorRef.current = nextClockAnchor;
+    snapshotRef.current = nextSnapshot;
+    setClockAnchor(nextClockAnchor);
+    setSnapshot(nextSnapshot);
+    setCaptureVisualServerNow(nextSnapshot.serverTime);
+    setClientNow(receivedAt);
+  }, []);
+
+  const refreshSnapshot = useCallback(
+    async (options?: { signal?: AbortSignal; suppressError?: boolean }) => {
+      if (refreshInFlightRef.current) {
+        return;
+      }
+
+      refreshInFlightRef.current = true;
+
+      try {
+        const nextSnapshot = await fetchServerSnapshot(playerId, options?.signal);
+        applySnapshot(nextSnapshot);
+      } catch (error) {
+        if (!isAbortError(error) && !options?.suppressError) {
+          setStatusMessage(
+            getErrorMessage(error, "Could not reach the live territory server."),
+          );
+        }
+      } finally {
+        refreshInFlightRef.current = false;
+      }
+    },
+    [applySnapshot, playerId],
+  );
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void refreshSnapshot({ signal: abortController.signal });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      abortController.abort();
+    };
+  }, [refreshSnapshot]);
+
+  useEffect(() => {
+    const eventSource = openServerEvents(playerId);
+
+    const handleSnapshot = (event: Event) => {
+      try {
+        const nextSnapshot = JSON.parse((event as MessageEvent<string>).data) as ServerGameSnapshot;
+        applySnapshot(nextSnapshot);
+      } catch {
+        // Ignore malformed events so the stream can keep running.
+      }
+    };
+
+    const handleHeartbeat = (event: Event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent<string>).data) as {
+          serverTime?: number;
+        };
+
+        if (typeof payload.serverTime !== "number") {
+          return;
+        }
+
+        const receivedAt = Date.now();
+        const nextClockAnchor = {
+          clientTime: receivedAt,
+          serverTime: payload.serverTime,
+        };
+
+        clockAnchorRef.current = nextClockAnchor;
+        setClockAnchor(nextClockAnchor);
+        setClientNow(receivedAt);
+      } catch {
+        // Ignore malformed heartbeats so the browser can keep auto-reconnecting.
+      }
+    };
+
+    eventSource.addEventListener("snapshot", handleSnapshot);
+    eventSource.addEventListener("heartbeat", handleHeartbeat);
+
+    return () => {
+      eventSource.removeEventListener("snapshot", handleSnapshot);
+      eventSource.removeEventListener("heartbeat", handleHeartbeat);
+      eventSource.close();
+    };
+  }, [applySnapshot, playerId]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
-      const tickNow = Date.now()
+      const nextClientNow = Date.now();
+      setClientNow(nextClientNow);
 
-      setNow(tickNow)
-      setPlayerState((currentPlayerState) => {
-        const nextPlayerState = regeneratePlayerActionPoints(currentPlayerState, tickNow)
-        return arePlayerStatesEqual(currentPlayerState, nextPlayerState)
-          ? currentPlayerState
-          : nextPlayerState
-      })
-      setSeasonState((currentSeasonState) => {
-        const nextSeasonState = ensureActiveSeasonState(currentSeasonState, tickNow)
+      const approxServerNow = getApproxServerNow(
+        clockAnchorRef.current,
+        nextClientNow,
+      );
 
-        if (nextSeasonState !== currentSeasonState) {
-          setCaptureVisualNow(tickNow)
-        }
-
-        return nextSeasonState
-      })
-    }, GAME_CLOCK_INTERVAL_MS)
+      if (approxServerNow >= snapshotRef.current.season.endsAt) {
+        void refreshSnapshot({ suppressError: true });
+      }
+    }, GAME_CLOCK_INTERVAL_MS);
 
     return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [])
-
-  useEffect(() => {
-    savePlayerState(playerState)
-  }, [playerState])
-
-  useEffect(() => {
-    saveSeasonState(seasonState)
-  }, [seasonState])
+      window.clearInterval(intervalId);
+    };
+  }, [refreshSnapshot]);
 
   useEffect(() => {
     if (!statusMessage) {
-      return
+      return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      setStatusMessage(null)
-    }, 2400)
+      setStatusMessage(null);
+    }, 2400);
 
     return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [statusMessage])
+      window.clearTimeout(timeoutId);
+    };
+  }, [statusMessage]);
 
+  const serverNow = useMemo(
+    () => getApproxServerNow(clockAnchor, clientNow),
+    [clientNow, clockAnchor],
+  );
   const resolvedPlayerState = useMemo(
-    () => regeneratePlayerActionPoints(playerState, now),
-    [now, playerState],
-  )
-  const resolvedSeasonState = useMemo(
-    () => ensureActiveSeasonState(seasonState, now),
-    [now, seasonState],
-  )
-  const seasonWindow = useMemo(() => getSeasonWindow(now), [now])
+    () => regeneratePlayerActionPoints(snapshot.player, serverNow),
+    [serverNow, snapshot.player],
+  );
   const seasonTimeRemaining = useMemo(
-    () => getSeasonTimeRemaining(resolvedSeasonState, now),
-    [now, resolvedSeasonState],
-  )
+    () => getSeasonTimeRemaining(snapshot.season, serverNow),
+    [serverNow, snapshot.season],
+  );
   const nextActionPointIn = useMemo(
-    () => getTimeUntilNextActionPoint(playerState, now),
-    [now, playerState],
-  )
+    () => getTimeUntilNextActionPoint(snapshot.player, serverNow),
+    [serverNow, snapshot.player],
+  );
   const legendGroups = useMemo(
-    () => buildRegionControlLegend(resolvedSeasonState),
-    [resolvedSeasonState],
-  )
-  const controlCounts = useMemo(
-    () => getRegionControlCountsFromSeason(resolvedSeasonState),
-    [resolvedSeasonState],
-  )
-  const nextRecentCaptureExpiryAt = useMemo(
-    () => getNextRecentCaptureExpiryAt(resolvedSeasonState, captureVisualNow),
-    [captureVisualNow, resolvedSeasonState],
-  )
+    () => buildRegionControlLegend(snapshot.season),
+    [snapshot.season],
+  );
+  const nextTownVisualExpiryAt = useMemo(
+    () => getNextTownVisualExpiryAt(snapshot.season, serverNow),
+    [serverNow, snapshot.season],
+  );
   const townVisualStates = useMemo(
-    () => buildTownVisualStates(resolvedSeasonState, townNeighbors, captureVisualNow),
-    [captureVisualNow, resolvedSeasonState, townNeighbors],
-  )
-
-  const contestedTownCount = useMemo(
     () =>
-      Object.values(resolvedSeasonState.towns).filter((town) => town.isContested).length,
-    [resolvedSeasonState],
-  )
+      buildTownVisualStates(
+        snapshot.season,
+        sharedTownNeighbors,
+        captureVisualServerNow,
+      ),
+    [captureVisualServerNow, snapshot.season],
+  );
   const capturedTownCount = useMemo(
-    () => Object.values(townVisualStates).filter((town) => town.isCaptureProtected).length,
+    () =>
+      Object.values(townVisualStates).filter((town) => town.isCaptureProtected)
+        .length,
     [townVisualStates],
-  )
+  );
 
   useEffect(() => {
-    if (nextRecentCaptureExpiryAt === null) {
-      return
+    if (nextTownVisualExpiryAt === null) {
+      return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      setCaptureVisualNow(Date.now())
-    }, Math.max(0, nextRecentCaptureExpiryAt - Date.now()) + 16)
+      setCaptureVisualServerNow(
+        getApproxServerNow(clockAnchorRef.current, Date.now()),
+      );
+    }, Math.max(0, nextTownVisualExpiryAt - serverNow) + 16);
 
     return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [nextRecentCaptureExpiryAt])
+      window.clearTimeout(timeoutId);
+    };
+  }, [nextTownVisualExpiryAt, serverNow]);
 
-  const performAction = (action: PlayerAction) => {
-    const actionNow = Date.now()
-    const refreshedPlayerState = regeneratePlayerActionPoints(playerState, actionNow)
-    const refreshedSeasonState = ensureActiveSeasonState(seasonState, actionNow)
+  const performAction = useCallback(
+    async (action: PlayerAction) => {
+      if (actionInFlightRef.current) {
+        return;
+      }
 
-    const nextPlayerState = spendPlayerActionPoints(
-      refreshedPlayerState,
-      actionNow,
-      PLAYER_ACTION_COST,
-    )
+      actionInFlightRef.current = true;
 
-    if (!nextPlayerState) {
-      setPlayerState(refreshedPlayerState)
-      setStatusMessage(`No action points. +1 in ${formatDurationShort(nextActionPointIn)}.`)
-      return
-    }
+      try {
+        const result = await postServerAction(playerId, action);
+        applySnapshot(result.snapshot);
 
-    const actionResult = applyAction({
-      action,
-      now: actionNow,
-      season: refreshedSeasonState,
-      townNeighbors,
-    })
+        if (!result.ok) {
+          setStatusMessage(
+            result.error === "No action points available."
+              ? `No action points. +1 in ${formatDurationShort(
+                  getTimeUntilNextActionPoint(
+                    result.snapshot.player,
+                    result.snapshot.serverTime,
+                  ),
+                )}.`
+              : result.error,
+          );
+          return;
+        }
 
-    if (!actionResult.ok) {
-      setPlayerState(refreshedPlayerState)
-      setStatusMessage(actionResult.error ?? "Action unavailable.")
-      return
-    }
+        setSpendFeedbackKey((currentKey) => (currentKey ?? 0) + 1);
+        setStatusMessage(null);
+      } catch (error) {
+        setStatusMessage(
+          getErrorMessage(error, "Could not send that action to the live map."),
+        );
+      } finally {
+        actionInFlightRef.current = false;
+      }
+    },
+    [applySnapshot, playerId],
+  );
 
-    setPlayerState(nextPlayerState)
-    setSeasonState(actionResult.season)
-    setNow(actionNow)
-    setCaptureVisualNow(actionNow)
-    setSpendFeedbackKey((currentKey) => (currentKey ?? 0) + 1)
-    setStatusMessage(null)
-  }
+  const getTownBattleState = useCallback(
+    (townName: TownName) => snapshot.season.towns[townName],
+    [snapshot.season],
+  );
 
-  const getTownBattleState = (townName: TownName) => resolvedSeasonState.towns[townName]
+  const getTownContext = useCallback(
+    (townName: TownName) => {
+      const town = getTownBattleState(townName);
+      if (!town) {
+        return null;
+      }
 
-  const getTownContext = (townName: TownName) => {
-    const town = getTownBattleState(townName)
-    if (!town) {
-      return null
-    }
+      const captureProtectionRemaining = getTownCaptureProtectionRemaining(
+        town,
+        serverNow,
+      );
 
-    return {
-      captureProtectionRemaining: getTownCaptureProtectionRemaining(town, now),
-      isCaptureProtected: getTownCaptureProtectionRemaining(town, now) > 0,
-      neighboringTowns: townNeighbors[townName] ?? [],
-      town,
-      validInvadingRegions: getValidInvadingRegions({
-        season: resolvedSeasonState,
-        townName,
-        townNeighbors,
-      }),
-    }
-  }
+      return {
+        captureProtectionRemaining,
+        isCaptureProtected: captureProtectionRemaining > 0,
+        neighboringTowns: sharedTownNeighbors[townName] ?? [],
+        town,
+        validInvadingRegions: getValidInvadingRegions({
+          season: snapshot.season,
+          townName,
+          townNeighbors: sharedTownNeighbors,
+        }),
+      };
+    },
+    [getTownBattleState, serverNow, snapshot.season],
+  );
 
   return {
     actionPoints: resolvedPlayerState.actionPoints,
     capturedTownCount,
-    contestedTownCount,
-    controlCounts,
+    contestedTownCount: snapshot.contestedTownCount,
+    controlCounts: snapshot.controlCounts,
     getTownBattleState,
     getTownContext,
     legendGroups,
@@ -231,11 +344,11 @@ export function useTerritoryGame(townNeighbors: TownNeighbors) {
     onDismissSpendFeedback: () => setSpendFeedbackKey(null),
     onInvade: (townName: TownName, invadingRegion: RegionName) =>
       performAction({ invadingRegion, townName, type: "invade" }),
-    season: resolvedSeasonState,
-    seasonLabel: `Season ${seasonWindow.seasonNumber}`,
+    season: snapshot.season,
+    seasonLabel: snapshot.seasonLabel,
     seasonTimeRemaining,
     spendFeedbackKey,
     statusMessage,
     townVisualStates,
-  }
+  };
 }

@@ -61,6 +61,16 @@ export function ensureAnonymousPlayerId() {
   }
 
   try {
+    if (shouldResetGameFromUrl() || shouldRefillActionPointsFromUrl()) {
+      const resetId =
+        typeof window.crypto?.randomUUID === "function"
+          ? window.crypto.randomUUID()
+          : `player-${Date.now()}`
+
+      window.localStorage.setItem(PLAYER_ID_STORAGE_KEY, resetId)
+      return resetId
+    }
+
     const existingId = window.localStorage.getItem(PLAYER_ID_STORAGE_KEY)
     if (existingId) {
       return existingId

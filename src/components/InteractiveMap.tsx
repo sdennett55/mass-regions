@@ -16,10 +16,9 @@ import {
   getRegionTownCount,
   getLegendGroups,
 } from '../data/massRegions'
-import { buildTownNeighbors, collectTownShapesFromSvg } from '../game/adjacency'
 import { CAPTURE_POINTS_TO_CAPTURE } from '../game/constants'
 import { useTerritoryGame } from '../game/useTerritoryGame'
-import type { TownBattleState, TownNeighbors } from '../game/types'
+import type { TownBattleState } from '../game/types'
 import GameHud from './GameHud'
 import MassachusettsMap from './Map'
 import TownBattlePanel from './TownBattlePanel'
@@ -339,8 +338,6 @@ function InteractiveMap() {
   )
   const [hoveredTownId, setHoveredTownId] = useState<string | null>(null)
   const [selectedTownId, setSelectedTownId] = useState<string | null>(null)
-  const [townNeighbors, setTownNeighbors] = useState<TownNeighbors>({})
-
   const {
     actionPoints,
     capturedTownCount,
@@ -358,7 +355,7 @@ function InteractiveMap() {
     spendFeedbackKey,
     statusMessage,
     townVisualStates,
-  } = useTerritoryGame(townNeighbors)
+  } = useTerritoryGame()
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
@@ -651,26 +648,6 @@ function InteractiveMap() {
       cancelPreviewFrame()
     }
   }, [])
-
-  useEffect(() => {
-    if (Object.keys(townNeighbors).length > 0) {
-      return
-    }
-
-    const svgElement = mapLayerRef.current?.querySelector('svg')
-    if (!svgElement) {
-      return
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      const shapesByTown = collectTownShapesFromSvg(svgElement)
-      setTownNeighbors(buildTownNeighbors(shapesByTown))
-    })
-
-    return () => {
-      window.cancelAnimationFrame(frameId)
-    }
-  }, [camera, townNeighbors, viewport])
 
   const beginPanGesture = (
     pointerId: number,

@@ -598,6 +598,31 @@ export function getNextRecentCaptureExpiryAt(
   return nextExpiryAt
 }
 
+export function getNextTownVisualExpiryAt(
+  season: SeasonState,
+  now = Date.now(),
+) {
+  let nextExpiryAt: number | null = getNextRecentCaptureExpiryAt(season, now)
+
+  for (const town of Object.values(season.towns)) {
+    if (typeof town.lastCapturedAt !== "number") {
+      continue
+    }
+
+    const captureProtectionExpiryAt =
+      town.lastCapturedAt + CAPTURE_PROTECTION_WINDOW_MS
+
+    if (
+      captureProtectionExpiryAt > now &&
+      (nextExpiryAt === null || captureProtectionExpiryAt < nextExpiryAt)
+    ) {
+      nextExpiryAt = captureProtectionExpiryAt
+    }
+  }
+
+  return nextExpiryAt
+}
+
 export function formatDurationShort(durationMs: number) {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000))
   const days = Math.floor(totalSeconds / 86400)
