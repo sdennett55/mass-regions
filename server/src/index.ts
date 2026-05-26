@@ -1,38 +1,62 @@
 import cors from "cors"
 import express from "express"
 import type { Request, Response } from "express"
+import { rateLimit } from "express-rate-limit"
 
 import type { PlayerAction } from "../../src/game/types.ts"
 
 import { serverConfig } from "./config.ts"
 import { TerritoryGameStore } from "./gameStore.ts"
+import { ServerPersistence } from "./persistence.ts"
+import { AnonymousSessionManager } from "./sessions.ts"
 import type {
   ServerActionRequest,
   ServerStateResponse,
 } from "./protocol.ts"
 
 const app = express()
-const store = new TerritoryGameStore()
+const persistence = new ServerPersistence(serverConfig.databasePath)
+const store = new TerritoryGameStore(persistence)
+const sessionManager = new AnonymousSessionManager(persistence)
+
+const stateLimiter = rateLimit({
+  legacyHeaders: false,
+  message: { error: "Too many state refreshes. Please slow down." },
+  standardHeaders: "draft-8",
+  windowMs: 60 * 1000,
+  limit: 240,
+})
+
+const actionLimiter = rateLimit({
+  legacyHeaders: false,
+  message: { error: "Too many actions right now. Please slow down." },
+  standardHeaders: "draft-8",
+  windowMs: 60 * 1000,
+  limit: 40,
+})
+
+const eventLimiter = rateLimit({
+  legacyHeaders: false,
+  message: { error: "Too many live-connection attempts. Please slow down." },
+  standardHeaders: "draft-8",
+  windowMs: 60 * 1000,
+  limit: 30,
+})
 
 app.use(
   cors({
-    credentials: false,
+    credentials: true,
     origin(origin, callback) {
       callback(
-        null,
+        serverConfig.isAllowedOrigin(origin)
+          ? null
+          : new Error("Origin not allowed by CORS"),
         serverConfig.isAllowedOrigin(origin) ? origin ?? true : false,
       )
     },
   }),
 )
 app.use(express.json())
-
-function getPlayerIdFromRequest(request: Request) {
-  const rawPlayerId = request.query.playerId
-  return typeof rawPlayerId === "string" && rawPlayerId.trim()
-    ? rawPlayerId.trim()
-    : null
-}
 
 function isPlayerAction(value: unknown): value is PlayerAction {
   if (!value || typeof value !== "object") {
@@ -62,49 +86,37 @@ app.get("/health", (_request, response) => {
   })
 })
 
-app.get("/api/state", (request, response: Response<ServerStateResponse | { error: string }>) => {
-  const playerId = getPlayerIdFromRequest(request)
+app.get(
+  "/api/state",
+  stateLimiter,
+  (request, response: Response<ServerStateResponse | { error: string }>) => {
+    const { sessionId } = sessionManager.resolveSession(request, response)
 
-  if (!playerId) {
-    response.status(400).json({ error: "Missing playerId query parameter." })
-    return
-  }
-
-  response.json({
-    snapshot: store.getSnapshot(playerId),
-  })
-})
+    response.json({
+      snapshot: store.getSnapshot(sessionId),
+    })
+  },
+)
 
 app.post(
   "/api/actions",
-  (
-    request: Request<unknown, unknown, Partial<ServerActionRequest>>,
-    response,
-  ) => {
-    const { action, playerId } = request.body ?? {}
-
-    if (typeof playerId !== "string" || !playerId.trim()) {
-      response.status(400).json({ error: "Missing playerId." })
-      return
-    }
+  actionLimiter,
+  (request: Request, response) => {
+    const { action } = (request.body ?? {}) as Partial<ServerActionRequest>
 
     if (!isPlayerAction(action)) {
       response.status(400).json({ error: "Invalid action payload." })
       return
     }
 
-    const result = store.applyPlayerAction(playerId.trim(), action)
+    const { sessionId } = sessionManager.resolveSession(request, response)
+    const result = store.applyPlayerAction(sessionId, action)
     response.status(result.ok ? 200 : 409).json(result)
   },
 )
 
-app.get("/api/events", (request, response) => {
-  const playerId = getPlayerIdFromRequest(request)
-
-  if (!playerId) {
-    response.status(400).json({ error: "Missing playerId query parameter." })
-    return
-  }
+app.get("/api/events", eventLimiter, (request, response) => {
+  const { sessionId } = sessionManager.resolveSession(request, response)
 
   response.setHeader("Cache-Control", "no-cache, no-transform")
   response.setHeader("Connection", "keep-alive")
@@ -116,10 +128,10 @@ app.get("/api/events", (request, response) => {
     response.write(`data: ${JSON.stringify(data)}\n\n`)
   }
 
-  sendEvent("snapshot", store.getSnapshot(playerId))
+  sendEvent("snapshot", store.getSnapshot(sessionId))
 
   const unsubscribe = store.subscribe(() => {
-    sendEvent("snapshot", store.getSnapshot(playerId))
+    sendEvent("snapshot", store.getSnapshot(sessionId))
   })
 
   const heartbeatId = setInterval(() => {

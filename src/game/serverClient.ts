@@ -65,33 +65,25 @@ async function parseJsonResponse<T>(response: Response) {
   return data as T;
 }
 
-export async function fetchServerSnapshot(
-  playerId: string,
-  signal?: AbortSignal,
-) {
-  const response = await fetch(
-    buildGameServerUrl("api/state", { playerId }).toString(),
-    {
-      headers: {
-        Accept: "application/json",
-      },
-      signal,
+export async function fetchServerSnapshot(signal?: AbortSignal) {
+  const response = await fetch(buildGameServerUrl("api/state").toString(), {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
     },
-  );
+    signal,
+  });
 
   const data = await parseJsonResponse<ServerStateResponse>(response);
   return data.snapshot;
 }
 
-export async function postServerAction(
-  playerId: string,
-  action: PlayerAction,
-) {
+export async function postServerAction(action: PlayerAction) {
   const response = await fetch(buildGameServerUrl("api/actions").toString(), {
     body: JSON.stringify({
       action,
-      playerId,
     }),
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
     },
@@ -101,10 +93,10 @@ export async function postServerAction(
   return parseJsonResponse<ServerActionResponse>(response);
 }
 
-export function openServerEvents(playerId: string) {
-  return new EventSource(
-    buildGameServerUrl("api/events", { playerId }).toString(),
-  );
+export function openServerEvents() {
+  return new EventSource(buildGameServerUrl("api/events").toString(), {
+    withCredentials: true,
+  });
 }
 
 export function createInitialServerSnapshot(now = Date.now()): ServerGameSnapshot {

@@ -2,7 +2,6 @@ import {
   applyAction,
   buildTownVisualStates,
   createPlayerState,
-  createSeasonState,
   ensureActiveSeasonState,
   getRegionControlCountsFromSeason,
   getSeasonTimeRemaining,
@@ -23,23 +22,37 @@ import type {
   ServerActionResponse,
   ServerGameSnapshot,
 } from "./protocol.ts"
+import type { ServerPersistence } from "./persistence.ts"
 
 type StoreListener = () => void
 
 export class TerritoryGameStore {
   private listeners = new Set<StoreListener>()
+  private readonly persistence: ServerPersistence
   private playerStates = new Map<string, PlayerState>()
   private revision = 0
   private seasonState: SeasonState
   private readonly townNeighbors: TownNeighbors
 
-  constructor() {
-    this.seasonState = createSeasonState()
+  constructor(persistence: ServerPersistence) {
+    this.persistence = persistence
     this.townNeighbors = sharedTownNeighbors
+    this.revision = this.persistence.loadRevision()
+
+    const now = Date.now()
+    const storedSeasonState = this.persistence.loadSeasonState()
+    this.seasonState = ensureActiveSeasonState(storedSeasonState, now)
+
+    if (this.seasonState !== storedSeasonState) {
+      this.persistence.saveSeasonState(this.seasonState)
+      this.persistence.saveRevision(this.revision)
+    }
   }
 
   private emitChange() {
     this.revision += 1
+    this.persistence.saveSeasonState(this.seasonState)
+    this.persistence.saveRevision(this.revision)
     for (const listener of this.listeners) {
       listener()
     }
@@ -54,10 +67,12 @@ export class TerritoryGameStore {
   }
 
   private ensurePlayer(playerId: string, now: number) {
-    const existingPlayer = this.playerStates.get(playerId)
+    const existingPlayer =
+      this.playerStates.get(playerId) ?? this.persistence.loadPlayerState(playerId)
     if (!existingPlayer) {
       const nextPlayer = createPlayerState(now)
       this.playerStates.set(playerId, nextPlayer)
+      this.persistence.savePlayerState(playerId, nextPlayer)
       return nextPlayer
     }
 
@@ -67,6 +82,7 @@ export class TerritoryGameStore {
       refreshedPlayer.lastRegeneratedAt !== existingPlayer.lastRegeneratedAt
     ) {
       this.playerStates.set(playerId, refreshedPlayer)
+      this.persistence.savePlayerState(playerId, refreshedPlayer)
     }
 
     return refreshedPlayer
@@ -141,6 +157,7 @@ export class TerritoryGameStore {
     }
 
     this.playerStates.set(playerId, nextPlayerState)
+    this.persistence.savePlayerState(playerId, nextPlayerState)
     this.seasonState = actionResult.season
     this.emitChange()
 

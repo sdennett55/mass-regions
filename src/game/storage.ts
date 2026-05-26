@@ -14,8 +14,12 @@ function canUseStorage() {
   return typeof window !== "undefined"
 }
 
+function canUseDevGameOverrides() {
+  return canUseStorage() && import.meta.env.DEV
+}
+
 function shouldRefillActionPointsFromUrl() {
-  if (!canUseStorage()) {
+  if (!canUseDevGameOverrides()) {
     return false
   }
 
@@ -36,7 +40,7 @@ function shouldRefillActionPointsFromUrl() {
 }
 
 function shouldResetGameFromUrl() {
-  if (!canUseStorage()) {
+  if (!canUseDevGameOverrides()) {
     return false
   }
 

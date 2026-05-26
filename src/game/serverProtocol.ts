@@ -22,7 +22,6 @@ export type ServerGameSnapshot = {
 
 export type ServerActionRequest = {
   action: PlayerAction;
-  playerId: string;
 };
 
 export type ServerActionResponse =

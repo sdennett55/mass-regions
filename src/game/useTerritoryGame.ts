@@ -18,7 +18,6 @@ import {
   openServerEvents,
   postServerAction,
 } from "./serverClient";
-import { ensureAnonymousPlayerId } from "./storage";
 import { sharedTownNeighbors } from "./townNeighbors";
 import type { ServerGameSnapshot } from "./serverProtocol";
 import type { PlayerAction, RegionName, TownName } from "./types";
@@ -41,7 +40,6 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 export function useTerritoryGame() {
-  const [playerId] = useState(() => ensureAnonymousPlayerId());
   const [clientNow, setClientNow] = useState(() => Date.now());
   const [snapshot, setSnapshot] = useState<ServerGameSnapshot>(() =>
     createInitialServerSnapshot(Date.now()),
@@ -96,7 +94,7 @@ export function useTerritoryGame() {
       refreshInFlightRef.current = true;
 
       try {
-        const nextSnapshot = await fetchServerSnapshot(playerId, options?.signal);
+        const nextSnapshot = await fetchServerSnapshot(options?.signal);
         applySnapshot(nextSnapshot);
       } catch (error) {
         if (!isAbortError(error) && !options?.suppressError) {
@@ -108,7 +106,7 @@ export function useTerritoryGame() {
         refreshInFlightRef.current = false;
       }
     },
-    [applySnapshot, playerId],
+    [applySnapshot],
   );
 
   useEffect(() => {
@@ -124,7 +122,7 @@ export function useTerritoryGame() {
   }, [refreshSnapshot]);
 
   useEffect(() => {
-    const eventSource = openServerEvents(playerId);
+    const eventSource = openServerEvents();
 
     const handleSnapshot = (event: Event) => {
       try {
@@ -167,7 +165,7 @@ export function useTerritoryGame() {
       eventSource.removeEventListener("heartbeat", handleHeartbeat);
       eventSource.close();
     };
-  }, [applySnapshot, playerId]);
+  }, [applySnapshot]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -268,7 +266,7 @@ export function useTerritoryGame() {
       actionInFlightRef.current = true;
 
       try {
-        const result = await postServerAction(playerId, action);
+        const result = await postServerAction(action);
         applySnapshot(result.snapshot);
 
         if (!result.ok) {
@@ -295,7 +293,7 @@ export function useTerritoryGame() {
         actionInFlightRef.current = false;
       }
     },
-    [applySnapshot, playerId],
+    [applySnapshot],
   );
 
   const getTownBattleState = useCallback(
