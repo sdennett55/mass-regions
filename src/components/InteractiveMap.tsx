@@ -10,12 +10,19 @@ import { ChevronDown, ChevronRight, Settings2, X } from 'lucide-react'
 
 import {
   formatTownLabel,
+  getCanonicalTownId,
   getRegionColor,
-  getLegendGroups,
   getRegionForTownId,
   getRegionTownCount,
+  getLegendGroups,
 } from '../data/massRegions'
+import { CAPTURE_POINTS_TO_CAPTURE } from '../game/constants'
+import { useTerritoryGame } from '../game/useTerritoryGame'
+import type { TownBattleState } from '../game/types'
+import ActivityFeed from './ActivityFeed'
+import GameHud from './GameHud'
 import MassachusettsMap from './Map'
+import TownBattlePanel from './TownBattlePanel'
 
 const SVG_WIDTH = 2100
 const SVG_HEIGHT = 1300
@@ -28,6 +35,7 @@ const MAP_VIEW_STORAGE_KEY = 'mass-regions:view'
 const MAP_SETTINGS_STORAGE_KEY = 'mass-regions:settings'
 const TOUCH_HOVER_BLOCK_MS = 800
 const RENDER_BUFFER_RATIO = 0.18
+const REGIONS_MODE_QUERY_VALUE = 'regions'
 
 type Viewport = {
   width: number
@@ -53,9 +61,10 @@ type LocalPoint = {
 }
 
 type ActiveTown = {
+  battleState: TownBattleState | null
+  controlCount: number
   region: string
   regionColor: string
-  regionTownCount: number
   town: string
   townId: string
 }
@@ -81,6 +90,7 @@ type PinchGesture = {
 type GestureState = PanGesture | PinchGesture | null
 
 type StoredMapSettings = {
+  battleMode: boolean
   showTownLabels: boolean
 }
 
@@ -248,10 +258,70 @@ function loadStoredMapSettings(): StoredMapSettings | null {
     }
 
     return {
+      battleMode:
+        typeof parsedSettings.battleMode === 'boolean'
+          ? parsedSettings.battleMode
+          : true,
       showTownLabels: parsedSettings.showTownLabels,
     }
   } catch {
     return null
+  }
+}
+
+function getBattleModeOverrideFromUrl() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const modeParam = new URLSearchParams(window.location.search).get('mode')
+    if (!modeParam) {
+      return null
+    }
+
+    return modeParam.trim().toLowerCase() === REGIONS_MODE_QUERY_VALUE ? false : null
+  } catch {
+    return null
+  }
+}
+
+function loadInitialMapSettings() {
+  const storedSettings = loadStoredMapSettings()
+  const battleModeOverride = getBattleModeOverrideFromUrl()
+
+  if (battleModeOverride === null) {
+    return storedSettings
+  }
+
+  return {
+    battleMode: battleModeOverride,
+    showTownLabels: storedSettings?.showTownLabels ?? true,
+  }
+}
+
+function syncBattleModeUrl(isBattleMode: boolean) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    const url = new URL(window.location.href)
+
+    if (isBattleMode) {
+      url.searchParams.delete('mode')
+    } else {
+      url.searchParams.set('mode', REGIONS_MODE_QUERY_VALUE)
+    }
+
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(window.history.state, '', nextUrl)
+    }
+  } catch {
+    // Ignore URL write failures so the map can keep working in restricted contexts.
   }
 }
 
@@ -298,7 +368,7 @@ function getPreviewMatrix(
 }
 
 function InteractiveMap() {
-  const initialSettings = loadStoredMapSettings()
+  const initialSettings = loadInitialMapSettings()
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const mapLayerRef = useRef<HTMLDivElement | null>(null)
   const settingsPanelRef = useRef<HTMLDivElement | null>(null)
@@ -321,8 +391,29 @@ function InteractiveMap() {
   const [showTownLabels, setShowTownLabels] = useState(
     initialSettings?.showTownLabels ?? true,
   )
+  const [isBattleMode, setIsBattleMode] = useState(
+    initialSettings?.battleMode ?? true,
+  )
   const [hoveredTownId, setHoveredTownId] = useState<string | null>(null)
   const [selectedTownId, setSelectedTownId] = useState<string | null>(null)
+  const {
+    actionPoints,
+    activityEvents,
+    capturedTownCount,
+    contestedTownCount,
+    controlCounts,
+    getTownContext,
+    legendGroups,
+    nextActionPointIn,
+    onDefend,
+    onInvade,
+    season,
+    seasonLabel,
+    serverNow,
+    seasonTimeRemaining,
+    statusMessage,
+    townVisualStates,
+  } = useTerritoryGame()
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
@@ -393,18 +484,26 @@ function InteractiveMap() {
   const getDisplayedCamera = () =>
     previewCameraRef.current ?? committedCameraRef.current
 
-  const getTownById = (rawTownId: string): ActiveTown | null => {
-    const region = getRegionForTownId(rawTownId)
-    if (!region) {
+  const getTownById = (rawTownId: string, battleModeEnabled: boolean): ActiveTown | null => {
+    const canonicalTownId = getCanonicalTownId(rawTownId)
+    const battleState = season.towns[canonicalTownId]
+    const baselineRegion = getRegionForTownId(canonicalTownId)
+
+    if (!battleState || !baselineRegion) {
       return null
     }
 
+    const region = battleModeEnabled ? battleState.currentRegion : baselineRegion
+
     return {
+      battleState: battleModeEnabled ? battleState : null,
+      controlCount: battleModeEnabled
+        ? controlCounts[battleState.currentRegion] ?? 0
+        : getRegionTownCount(region),
       region,
       regionColor: getRegionColor(region),
-      regionTownCount: getRegionTownCount(region),
-      town: formatTownLabel(rawTownId),
-      townId: rawTownId,
+      town: formatTownLabel(canonicalTownId),
+      townId: canonicalTownId,
     }
   }
 
@@ -418,7 +517,15 @@ function InteractiveMap() {
       return null
     }
 
-    return townPath.id
+    return getCanonicalTownId(townPath.id)
+  }
+
+  const getTownIdAtClientPoint = (clientX: number, clientY: number) => {
+    if (typeof document === 'undefined') {
+      return null
+    }
+
+    return getTownIdFromEventTarget(document.elementFromPoint(clientX, clientY))
   }
 
   const writePreviewCamera = (nextCamera: CameraState) => {
@@ -542,9 +649,14 @@ function InteractiveMap() {
 
   useEffect(() => {
     saveStoredMapSettings({
+      battleMode: isBattleMode,
       showTownLabels,
     })
-  }, [showTownLabels])
+  }, [isBattleMode, showTownLabels])
+
+  useEffect(() => {
+    syncBattleModeUrl(isBattleMode)
+  }, [isBattleMode])
 
   useEffect(() => {
     const element = viewportRef.current
@@ -867,7 +979,7 @@ function InteractiveMap() {
       event.type === 'pointerup' &&
       currentGesture?.kind === 'pan' &&
       !currentGesture.moved
-        ? getTownIdFromEventTarget(event.target)
+        ? getTownIdAtClientPoint(event.clientX, event.clientY)
         : null
 
     if (event.pointerType === 'touch') {
@@ -900,10 +1012,23 @@ function InteractiveMap() {
           : null
 
       if (tappedTownId) {
-        updateSelectedTownId(tappedTownId)
+        if (isBattleMode) {
+          updateSelectedTownId(tappedTownId)
 
-        if (!isTouchGesture) {
+          if (!isTouchGesture) {
+            updateHoveredTownId(tappedTownId)
+          }
+        } else {
+          updateSelectedTownId(null)
           updateHoveredTownId(tappedTownId)
+        }
+      } else if (!currentGesture.moved) {
+        if (isBattleMode) {
+          updateSelectedTownId(null)
+        }
+
+        if (!isTouchGesture || !isBattleMode) {
+          updateHoveredTownId(null)
         }
       }
 
@@ -983,6 +1108,28 @@ function InteractiveMap() {
     setShowTownLabels((currentState) => !currentState)
   }
 
+  const handleBattleModeTogglePointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const handleBattleModeToggleClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation()
+    setIsBattleMode((currentState) => {
+      const nextState = !currentState
+
+      if (!nextState) {
+        updateSelectedTownId(null)
+      }
+
+      return nextState
+    })
+  }
+
   const handleLegendTogglePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
@@ -1015,15 +1162,18 @@ function InteractiveMap() {
     resetView()
   }
 
-  const activeTownId = hoveredTownId ?? selectedTownId
-  const activeTown = activeTownId ? getTownById(activeTownId) : null
+  const activeTownId = (isBattleMode ? selectedTownId : null) ?? hoveredTownId
+  const activeTown = activeTownId ? getTownById(activeTownId, isBattleMode) : null
+  const selectedTownContext =
+    isBattleMode && selectedTownId ? getTownContext(selectedTownId) : null
   const defaultCamera = viewport ? getFitCamera(viewport) : null
-  const legendGroups = getLegendGroups()
   const mapLayerStyle = viewport ? getRenderLayerStyle(viewport) : undefined
   const isAtInitialView =
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
-  const shouldHideActiveTown =
-    isLegendOpen && !!viewport && viewport.width < 640
+  const isMobileViewport = !!viewport && viewport.width < 640
+  const isCompactHud = isMobileViewport
+  const shouldHideActiveTown = isLegendOpen && isMobileViewport
+  const displayedLegendGroups = isBattleMode ? legendGroups : getLegendGroups()
 
   return (
     <section
@@ -1040,8 +1190,24 @@ function InteractiveMap() {
       onPointerUp={finishGesture}
       onWheel={handleWheel}
     >
+      {isBattleMode ? (
+        <GameHud
+          actionPoints={actionPoints}
+          capturedTownCount={capturedTownCount}
+          compact={isCompactHud}
+          contestedTownCount={contestedTownCount}
+          nextActionPointIn={nextActionPointIn}
+          seasonLabel={seasonLabel}
+          seasonTimeRemaining={seasonTimeRemaining}
+        />
+      ) : null}
+
+      {isBattleMode ? (
+        <ActivityFeed events={activityEvents} now={serverNow} />
+      ) : null}
+
       <div
-        className="pointer-events-none absolute z-10 flex items-center gap-2"
+        className="pointer-events-none absolute z-20 flex items-center gap-2"
         style={{
           left: 'calc(env(safe-area-inset-left, 0px) + 0.75rem)',
           top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
@@ -1049,7 +1215,7 @@ function InteractiveMap() {
       >
         <div
           ref={settingsPanelRef}
-          className="pointer-events-auto relative cursor-default"
+          className="pointer-events-auto relative cursor-default select-text"
           data-ui-control="true"
         >
           <button
@@ -1066,7 +1232,7 @@ function InteractiveMap() {
 
           {isSettingsOpen ? (
             <div
-              className="absolute left-0 top-full mt-2 w-[18.5rem] cursor-default overflow-hidden rounded-2xl border border-white/75 bg-white/92 shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur"
+              className="absolute left-0 top-full mt-2 w-[18.5rem] cursor-default select-text overflow-hidden rounded-2xl border border-white/75 bg-white/92 shadow-[0_18px_40px_rgba(15,23,42,0.18)] backdrop-blur"
               data-ui-control="true"
               role="menu"
             >
@@ -1074,6 +1240,35 @@ function InteractiveMap() {
                 <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                   Settings
                 </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">
+                    Battle mode
+                  </p>
+                  <p className="text-xs font-medium text-slate-500">
+                    Show contested and captured territory
+                  </p>
+                </div>
+
+                <button
+                  aria-checked={isBattleMode}
+                  className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition ${
+                    isBattleMode ? 'bg-slate-950' : 'bg-slate-300'
+                  }`}
+                  data-ui-control="true"
+                  onClick={handleBattleModeToggleClick}
+                  onPointerDown={handleBattleModeTogglePointerDown}
+                  role="switch"
+                  type="button"
+                >
+                  <span
+                    className={`h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition ${
+                      isBattleMode ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
               </div>
 
               <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3">
@@ -1088,7 +1283,7 @@ function InteractiveMap() {
 
                 <button
                   aria-checked={showTownLabels}
-                  className={`relative inline-flex h-7 w-12 cursor-pointer items-center rounded-full transition ${
+                  className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition ${
                     showTownLabels ? 'bg-slate-950' : 'bg-slate-300'
                   }`}
                   data-ui-control="true"
@@ -1114,7 +1309,7 @@ function InteractiveMap() {
                 </div>
 
                 <button
-                  className="cursor-pointer rounded-full border border-slate-200 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
+                  className="shrink-0 cursor-pointer rounded-full border border-slate-200 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800"
                   data-ui-control="true"
                   onClick={handleLegendToggleClick}
                   onPointerDown={handleLegendTogglePointerDown}
@@ -1142,7 +1337,9 @@ function InteractiveMap() {
 
       {isLegendOpen ? (
         <aside
-          className="pointer-events-auto absolute z-10 flex w-[min(24rem,calc(100vw-1.5rem))] cursor-default flex-col overflow-hidden rounded-3xl border border-white/75 bg-white/92 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
+          className={`pointer-events-auto absolute flex w-[min(24rem,calc(100vw-1.5rem))] cursor-default select-text flex-col overflow-hidden rounded-3xl border border-white/75 bg-white/92 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur ${
+            isMobileViewport ? 'z-30' : 'z-10'
+          }`}
           data-ui-control="true"
           style={{
             bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
@@ -1169,7 +1366,7 @@ function InteractiveMap() {
 
           <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
             <div className="space-y-2">
-              {legendGroups.map((group) => {
+              {displayedLegendGroups.map((group) => {
                 const isExpanded = expandedLegendRegions.includes(group.region)
 
                 return (
@@ -1230,7 +1427,21 @@ function InteractiveMap() {
         </aside>
       ) : null}
 
-      {activeTown && !shouldHideActiveTown ? (
+      {selectedTownContext && !shouldHideActiveTown ? (
+        <TownBattlePanel
+          actionPoints={actionPoints}
+          battleState={selectedTownContext.town}
+          captureProtectionRemaining={selectedTownContext.captureProtectionRemaining}
+          controlCount={controlCounts[selectedTownContext.town.currentRegion] ?? 0}
+          isCaptureProtected={selectedTownContext.isCaptureProtected}
+          neighboringTowns={selectedTownContext.neighboringTowns}
+          onClose={() => updateSelectedTownId(null)}
+          onDefend={() => onDefend(selectedTownContext.town.townName)}
+          onInvade={(region) => onInvade(selectedTownContext.town.townName, region)}
+          statusMessage={statusMessage}
+          validInvadingRegions={selectedTownContext.validInvadingRegions}
+        />
+      ) : activeTown && !shouldHideActiveTown ? (
         <div
           className="pointer-events-none absolute z-10 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/75 bg-white/86 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.14)] backdrop-blur"
           style={{
@@ -1250,7 +1461,16 @@ function InteractiveMap() {
                 {activeTown.town}
               </p>
               <p className="text-xs font-medium text-slate-600">
-                {activeTown.region} ({activeTown.regionTownCount} towns)
+                {activeTown.region} ({activeTown.controlCount} towns)
+              </p>
+              <p className="text-[11px] font-medium text-slate-500">
+                {isBattleMode && activeTown.battleState
+                  ? townVisualStates[activeTown.townId]?.isCaptureProtected
+                  ? 'Captured territory'
+                  : activeTown.battleState.isContested
+                  ? `${activeTown.battleState.contestingRegion} invading (${activeTown.battleState.captureProgress}/${CAPTURE_POINTS_TO_CAPTURE})`
+                  : 'Secure territory'
+                  : 'Standard region view'}
               </p>
             </div>
           </div>
@@ -1268,7 +1488,9 @@ function InteractiveMap() {
             className="block h-full w-full select-none"
             preserveAspectRatio="xMidYMid meet"
             role="img"
+            selectedTownId={isBattleMode ? selectedTownId : null}
             showTownLabels={showTownLabels}
+            townVisualStates={isBattleMode ? townVisualStates : undefined}
             viewBox={getRenderViewBoxString(camera, viewport)}
           />
         </div>

@@ -32,3 +32,33 @@ body {
 #root {
   min-height: 100vh;
 }
+
+.town-frontline {
+  animation: town-frontline-pulse 2.4s ease-in-out infinite;
+}
+
+.town-recently-captured {
+  animation: town-captured-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes town-frontline-pulse {
+  0%,
+  100% {
+    stroke-opacity: 0.46;
+  }
+
+  50% {
+    stroke-opacity: 0.82;
+  }
+}
+
+@keyframes town-captured-pulse {
+  0%,
+  100% {
+    stroke-opacity: 0.65;
+  }
+
+  50% {
+    stroke-opacity: 1;
+  }
+}

@@ -97,7 +97,6 @@ export const massTownToRegion: Record<string, RegionName> = {
   EASTON: "Southeastern Massachusetts",
   FOXBOROUGH: "Greater Boston",
   MANSFIELD: "Southeastern Massachusetts",
-  NORTH_ATTLEBORO: "Southeastern Massachusetts",
   NORTH_ATTLEBOROUGH: "Southeastern Massachusetts",
   NORTON: "Southeastern Massachusetts",
   PLAINVILLE: "Greater Boston",
@@ -411,7 +410,6 @@ const normalizedAliasMap: Record<string, string> = {
   MANCHESTER: "MANCHESTER_BY_THE_SEA",
   MT_WASHINGTON: "MOUNT_WASHINGTON",
   MTWASHINGTON: "MOUNT_WASHINGTON",
-  NORTH_ATTLEBORO: "NORTH_ATTLEBOROUGH",
 };
 
 const townDisplayNameOverrides: Record<string, string> = {

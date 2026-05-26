@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../src/data/**/*.ts",
+    "../src/game/constants.ts",
+    "../src/game/logic.ts",
+    "../src/game/manualTownNeighbors.ts",
+    "../src/game/serverProtocol.ts",
+    "../src/game/townNeighbors.ts",
+    "../src/game/types.ts",
+    "../src/game/world.ts"
+  ]
+}
