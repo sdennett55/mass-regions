@@ -64,6 +64,8 @@ export const manualTownNeighbors = {
     "SOMERVILLE",
     "WINCHESTER",
   ],
+  ASHBURNHAM: ["WINCHENDON", "GARDNER", "WESTMINSTER", "FITCHBURG", "ASHBY"],
+  ASHBY: ["TOWNSEND", "LUNENBURG", "FITCHBURG", "ASHBURNHAM"],
   ASHFIELD: [
     "BUCKLAND",
     "CONWAY",
@@ -73,6 +75,7 @@ export const manualTownNeighbors = {
     "HAWLEY",
   ],
   ASHLAND: ["FRAMINGHAM", "SHERBORN", "HOLLISTON", "HOPKINTON", "SOUTHBOROUGH"],
+  ATHOL: ["ROYALSTON", "PHILLIPSTON", "PETERSHAM", "NEW_SALEM", "ORANGE"],
   ATTLEBORO: [
     "NORTH_ATTLEBOROUGH",
     "MANSFIELD",
@@ -81,6 +84,7 @@ export const manualTownNeighbors = {
     "SEEKONK",
   ],
   AUBURN: ["OXFORD", "LEICESTER", "MILLBURY", "WORCESTER"],
+  AYER: ["SHIRLEY", "GROTON", "LITTLETON", "HARVARD"],
   BARNSTABLE: ["MASHPEE", "SANDWICH", "YARMOUTH"],
   BARRE: [
     "HUBBARDSTON",
@@ -415,6 +419,7 @@ export const manualTownNeighbors = {
   FAIRHAVEN: ["ACUSHNET", "MATTAPOISETT", "NEW_BEDFORD"],
   FALMOUTH: ["BOURNE", "MASHPEE", "SANDWICH"],
   FALL_RIVER: ["DARTMOUTH", "FREETOWN", "WESTPORT"],
+  FITCHBURG: ["ASHBY", "LUNENBURG", "LEOMINSTER", "WESTMINSTER", "ASHBURNHAM"],
   FLORIDA: [
     "MONROE",
     "ROWE",
@@ -451,6 +456,13 @@ export const manualTownNeighbors = {
     "NEW_BEDFORD",
     "ROCHESTER",
   ],
+  GARDNER: [
+    "WINCHENDON",
+    "ASHBURNHAM",
+    "WESTMINSTER",
+    "HUBBARDSTON",
+    "TEMPLETON",
+  ],
   GEORGETOWN: ["GROVELAND", "NEWBURY", "ROWLEY", "BOXFORD"],
   GILL: ["BERNARDSTON", "NORTHFIELD", "ERVING", "MONTAGUE", "GREENFIELD"],
   GLOUCESTER: ["ROCKPORT", "IPSWICH", "ESSEX", "MANCHESTER_BY_THE_SEA"],
@@ -486,6 +498,16 @@ export const manualTownNeighbors = {
     "MONTAGUE",
     "DEERFIELD",
     "SHELBURNE",
+  ],
+  GROTON: [
+    "PEPPERELL",
+    "DUNSTABLE",
+    "TYNGSBOROUGH",
+    "WESTFORD",
+    "LITTLETON",
+    "AYER",
+    "SHIRLEY",
+    "TOWNSEND",
   ],
   GROVELAND: ["HAVERHILL", "WEST_NEWBURY", "NEWBURY", "GEORGETOWN", "BOXFORD"],
   HADLEY: [
@@ -530,6 +552,15 @@ export const manualTownNeighbors = {
     "WHITMAN",
   ],
   HARDWICK: ["PETERSHAM", "BARRE", "NEW_BRAINTREE", "WARE"],
+  HARVARD: [
+    "SHIRLEY",
+    "AYER",
+    "LITTLETON",
+    "BOXBOROUGH",
+    "STOW",
+    "BOLTON",
+    "LANCASTER",
+  ],
   HARWICH: ["BREWSTER", "CHATHAM", "DENNIS", "ORLEANS"],
   HATFIELD: ["WILLIAMSBURG", "WHATELY", "HADLEY", "NORTHAMPTON"],
   HAVERHILL: [
@@ -637,6 +668,14 @@ export const manualTownNeighbors = {
   ],
   LEICESTER: ["SPENCER", "PAXTON", "WORCESTER", "AUBURN", "OXFORD", "CHARLTON"],
   LENOX: ["PITTSFIELD", "WASHINGTON", "LEE", "STOCKBRIDGE", "RICHMOND"],
+  LEOMINSTER: [
+    "FITCHBURG",
+    "LUNENBURG",
+    "LANCASTER",
+    "STERLING",
+    "PRINCETON",
+    "WESTMINSTER",
+  ],
   LEVERETT: ["MONTAGUE", "WENDELL", "SHUTESBURY", "AMHERST", "SUNDERLAND"],
   LEXINGTON: [
     "BURLINGTON",
@@ -658,6 +697,7 @@ export const manualTownNeighbors = {
     "BEDFORD",
     "LEXINGTON",
   ],
+  LITTLETON: ["GROTON", "WESTFORD", "ACTON", "BOXBOROUGH", "HARVARD", "AYER"],
   LONGMEADOW: ["SPRINGFIELD", "AGAWAM", "EAST_LONGMEADOW"],
   LOWELL: ["DRACUT", "TEWKSBURY", "BILLERICA", "CHELMSFORD", "TYNGSBOROUGH"],
   LUDLOW: [
@@ -667,6 +707,14 @@ export const manualTownNeighbors = {
     "PALMER",
     "WILBRAHAM",
     "SPRINGFIELD",
+  ],
+  LUNENBURG: [
+    "TOWNSEND",
+    "SHIRLEY",
+    "LANCASTER",
+    "LEOMINSTER",
+    "FITCHBURG",
+    "ASHBY",
   ],
   LYNN: [
     "NAHANT",
@@ -889,6 +937,7 @@ export const manualTownNeighbors = {
     "NORTH_BROOKFIELD",
   ],
   OAK_BLUFFS: ["EDGARTOWN", "TISBURY", "WEST_TISBURY"],
+  ORANGE: ["ROYALSTON", "ATHOL", "NEW_SALEM", "WENDELL", "ERVING", "WARWICK"],
   ORLEANS: ["BREWSTER", "CHATHAM", "EASTHAM", "HARWICH"],
   OTIS: [
     "BECKET",
@@ -930,6 +979,7 @@ export const manualTownNeighbors = {
     "HANSON",
     "HANOVER",
   ],
+  PEPPERELL: ["DUNSTABLE", "GROTON", "TOWNSEND"],
   PERU: [
     "WINDSOR",
     "CUMMINGTON",
@@ -937,6 +987,15 @@ export const manualTownNeighbors = {
     "MIDDLEFIELD",
     "WASHINGTON",
     "HINSDALE",
+  ],
+  PETERSHAM: ["ATHOL", "PHILLIPSTON", "BARRE", "HARDWICK", "WARE", "NEW_SALEM"],
+  PHILLIPSTON: [
+    "PETERSHAM",
+    "ATHOL",
+    "ROYALSTON",
+    "TEMPLETON",
+    "HUBBARDSTON",
+    "BARRE",
   ],
   PITTSFIELD: [
     "LANESBOROUGH",
@@ -1021,6 +1080,14 @@ export const manualTownNeighbors = {
   ROCKPORT: ["GLOUCESTER"],
   ROWE: ["HEATH", "CHARLEMONT", "FLORIDA", "MONROE"],
   ROWLEY: ["NEWBURY", "GEORGETOWN", "BOXFORD", "IPSWICH"],
+  ROYALSTON: [
+    "ATHOL",
+    "PHILLIPSTON",
+    "TEMPLETON",
+    "WINCHENDON",
+    "WARWICK",
+    "ORANGE",
+  ],
   RUSSELL: ["GRANVILLE", "BLANDFORD", "HUNTINGTON", "MONTGOMERY", "WESTFIELD"],
   RUTLAND: ["PRINCETON", "HOLDEN", "PAXTON", "OAKHAM", "BARRE", "HUBBARDSTON"],
   SALEM: ["BEVERLY", "DANVERS", "PEABODY", "LYNN", "SWAMPSCOTT", "MARBLEHEAD"],
@@ -1062,6 +1129,7 @@ export const manualTownNeighbors = {
     "MILLIS",
     "NATICK",
   ],
+  SHIRLEY: ["LUNENBURG", "TOWNSEND", "GROTON", "AYER", "HARVARD", "LANCASTER"],
   SHREWSBURY: [
     "WORCESTER",
     "WEST_BOYLSTON",
@@ -1191,6 +1259,13 @@ export const manualTownNeighbors = {
     "DIGHTON",
     "REHOBOTH",
   ],
+  TEMPLETON: [
+    "ROYALSTON",
+    "WINCHENDON",
+    "GARDNER",
+    "HUBBARDSTON",
+    "PHILLIPSTON",
+  ],
   TEWKSBURY: [
     "LOWELL",
     "DRACUT",
@@ -1209,6 +1284,7 @@ export const manualTownNeighbors = {
     "BOXFORD",
     "IPSWICH",
   ],
+  TOWNSEND: ["PEPPERELL", "GROTON", "SHIRLEY", "LUNENBURG", "ASHBY"],
   TRURO: ["PROVINCETOWN", "WELLFLEET"],
   TYNGSBOROUGH: [
     "DUNSTABLE",
@@ -1324,6 +1400,14 @@ export const manualTownNeighbors = {
     "NORTHAMPTON",
     "EASTHAMPTON",
   ],
+  WESTMINSTER: [
+    "ASHBURNHAM",
+    "GARDNER",
+    "HUBBARDSTON",
+    "PRINCETON",
+    "LEOMINSTER",
+    "FITCHBURG",
+  ],
   WESTON: ["NEWTON", "WALTHAM", "WELLESLEY", "NATICK", "WAYLAND", "LINCOLN"],
   WESTPORT: ["DARTMOUTH", "FALL_RIVER"],
   WEST_BOYLSTON: ["STERLING", "HOLDEN", "WORCESTER", "SHREWSBURY", "BOYLSTON"],
@@ -1403,6 +1487,7 @@ export const manualTownNeighbors = {
     "BILLERICA",
     "TEWKSBURY",
   ],
+  WINCHENDON: ["ASHBURNHAM", "GARDNER", "TEMPLETON", "ROYALSTON"],
   WINCHESTER: ["WOBURN", "ARLINGTON", "MEDFORD", "STONEHAM", "LEXINGTON"],
   WINDSOR: [
     "SAVOY",
