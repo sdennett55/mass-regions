@@ -738,7 +738,7 @@ export const manualTownNeighbors = {
     "LYNN",
     "SAUGUS",
   ],
-  MALDEN: ["MELROSE", "MEDFORD", "EVERETT", "REVERE", "SAUGUS"],
+  MALDEN: ["MELROSE", "MEDFORD", "EVERETT", "REVERE", "SAUGUS", "STONEHAM"],
   MANCHESTER_BY_THE_SEA: [
     "BEVERLY",
     "WENHAM",
@@ -753,6 +753,7 @@ export const manualTownNeighbors = {
     "NORTON",
     "NORTH_ATTLEBOROUGH",
     "ATTLEBORO",
+    "PLAINVILLE",
   ],
   MARBLEHEAD: ["SWAMPSCOTT", "SALEM"],
   MARION: ["MATTAPOISETT", "ROCHESTER", "WAREHAM"],
@@ -930,6 +931,7 @@ export const manualTownNeighbors = {
     "BROOKFIELD",
     "WEST_BROOKFIELD",
     "NEW_BRAINTREE",
+    "OAKHAM",
   ],
   NORTH_READING: [
     "ANDOVER",
@@ -1027,7 +1029,7 @@ export const manualTownNeighbors = {
     "HANCOCK",
   ],
   PLAINFIELD: ["CUMMINGTON", "ASHFIELD", "HAWLEY", "SAVOY", "WINDSOR"],
-  PLAINVILLE: ["WRENTHAM", "FOXBOROUGH", "MANSFIELD, NORTH_ATTLEBOROUGH"],
+  PLAINVILLE: ["WRENTHAM", "FOXBOROUGH", "MANSFIELD", "NORTH_ATTLEBOROUGH"],
   PLYMOUTH: ["BOURNE", "CARVER", "DUXBURY", "KINGSTON", "WAREHAM"],
   PLYMPTON: ["CARVER", "HALIFAX", "KINGSTON", "MIDDLEBOROUGH", "PEMBROKE"],
   PRINCETON: [
@@ -1128,7 +1130,15 @@ export const manualTownNeighbors = {
   ],
   SCITUATE: ["MARSHFIELD", "NORWELL", "HINGHAM", "COHASSET"],
   SEEKONK: ["REHOBOTH", "SWANSEA", "ATTLEBORO"],
-  SHARON: ["WALPOLE", "STOUGHTON", "FOXBOROUGH", "NORWOOD", "CANTON", "EASTON"],
+  SHARON: [
+    "WALPOLE",
+    "STOUGHTON",
+    "FOXBOROUGH",
+    "NORWOOD",
+    "CANTON",
+    "EASTON",
+    "MANSFIELD",
+  ],
   SHEFFIELD: [
     "GREAT_BARRINGTON",
     "NEW_MARLBOROUGH",
@@ -1340,7 +1350,7 @@ export const manualTownNeighbors = {
     "NORFOLK",
     "MEDFIELD",
   ],
-  WALTHAM: ["WESTON", "LEXINGTON", "NEWTON", "LINCOLN"],
+  WALTHAM: ["WESTON", "LEXINGTON", "NEWTON", "LINCOLN", "BELMONT", "WATERTOWN"],
   WARE: [
     "NEW_SALEM",
     "PETERSHAM",
@@ -1549,6 +1559,6 @@ export const manualTownNeighbors = {
     "MIDDLEFIELD",
     "PERU",
   ],
-  WRENTHAM: ["FRANKLIN", "PLAINVILLE", "FOXBOROUGH", "NORFOLK, BELLINGHAM"],
+  WRENTHAM: ["FRANKLIN", "PLAINVILLE", "FOXBOROUGH", "NORFOLK", "BELLINGHAM"],
   YARMOUTH: ["BARNSTABLE", "DENNIS"],
 } as const satisfies Partial<Record<TownName, readonly TownName[]>>;
