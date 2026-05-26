@@ -70,10 +70,7 @@ export class TerritoryGameStore {
     const existingPlayer =
       this.playerStates.get(playerId) ?? this.persistence.loadPlayerState(playerId)
     if (!existingPlayer) {
-      const nextPlayer = createPlayerState(now)
-      this.playerStates.set(playerId, nextPlayer)
-      this.persistence.savePlayerState(playerId, nextPlayer)
-      return nextPlayer
+      return createPlayerState(now)
     }
 
     const refreshedPlayer = regeneratePlayerActionPoints(existingPlayer, now)

@@ -4,6 +4,12 @@ import { DatabaseSync } from "node:sqlite";
 
 import type { PlayerState, SeasonState } from "../../src/game/types.ts";
 
+const PLAYER_STATE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const FINGERPRINT_RECORD_RETENTION_MS = 24 * 60 * 60 * 1000;
+const MAX_PERSISTED_PLAYER_STATES = 25_000;
+const MAX_PERSISTED_FINGERPRINT_RECORDS = 10_000;
+const PRUNE_WRITE_INTERVAL = 25;
+
 export type FingerprintRecord = {
   issuedAtTimestamps: number[];
   lastIssuedSessionId: string | null;
@@ -53,6 +59,7 @@ function parseJsonValue<T>(
 
 export class ServerPersistence {
   private readonly database: DatabaseSync;
+  private writesSinceLastPrune = 0;
 
   constructor(databasePath: string) {
     mkdirSync(path.dirname(databasePath), { recursive: true });
@@ -76,6 +83,80 @@ export class ServerPersistence {
         value TEXT NOT NULL
       );
     `);
+
+    this.ensureColumnExists(
+      "player_states",
+      "updated_at",
+      "INTEGER NOT NULL DEFAULT 0",
+    );
+    this.ensureColumnExists(
+      "session_fingerprints",
+      "updated_at",
+      "INTEGER NOT NULL DEFAULT 0",
+    );
+    this.pruneStoredData(Date.now());
+  }
+
+  private ensureColumnExists(
+    tableName: "player_states" | "session_fingerprints",
+    columnName: string,
+    columnDefinition: string,
+  ) {
+    const existingColumns = this.database
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all() as Array<{ name: string }>;
+
+    if (existingColumns.some((column) => column.name === columnName)) {
+      return;
+    }
+
+    this.database.exec(
+      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`,
+    );
+  }
+
+  private maybePruneStoredData(now: number) {
+    this.writesSinceLastPrune += 1;
+    if (this.writesSinceLastPrune < PRUNE_WRITE_INTERVAL) {
+      return;
+    }
+
+    this.writesSinceLastPrune = 0;
+    this.pruneStoredData(now);
+  }
+
+  private pruneStoredData(now: number) {
+    this.database
+      .prepare("DELETE FROM player_states WHERE updated_at < ?")
+      .run(now - PLAYER_STATE_RETENTION_MS);
+
+    this.database
+      .prepare("DELETE FROM session_fingerprints WHERE updated_at < ?")
+      .run(now - FINGERPRINT_RECORD_RETENTION_MS);
+
+    this.database
+      .prepare(`
+        DELETE FROM player_states
+        WHERE player_id IN (
+          SELECT player_id
+          FROM player_states
+          ORDER BY updated_at DESC
+          LIMIT -1 OFFSET ?
+        )
+      `)
+      .run(MAX_PERSISTED_PLAYER_STATES);
+
+    this.database
+      .prepare(`
+        DELETE FROM session_fingerprints
+        WHERE fingerprint IN (
+          SELECT fingerprint
+          FROM session_fingerprints
+          ORDER BY updated_at DESC
+          LIMIT -1 OFFSET ?
+        )
+      `)
+      .run(MAX_PERSISTED_FINGERPRINT_RECORDS);
   }
 
   private loadMetaValue(key: string) {
@@ -140,13 +221,19 @@ export class ServerPersistence {
   }
 
   savePlayerState(playerId: string, playerState: PlayerState) {
+    const now = Date.now();
+
     this.database
       .prepare(`
-        INSERT INTO player_states (player_id, value)
-        VALUES (?, ?)
-        ON CONFLICT(player_id) DO UPDATE SET value = excluded.value
+        INSERT INTO player_states (player_id, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(player_id) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at
       `)
-      .run(playerId, JSON.stringify(playerState));
+      .run(playerId, JSON.stringify(playerState), now);
+
+    this.maybePruneStoredData(now);
   }
 
   loadFingerprintRecord(fingerprint: string) {
@@ -158,12 +245,18 @@ export class ServerPersistence {
   }
 
   saveFingerprintRecord(fingerprint: string, record: FingerprintRecord) {
+    const now = Date.now();
+
     this.database
       .prepare(`
-        INSERT INTO session_fingerprints (fingerprint, value)
-        VALUES (?, ?)
-        ON CONFLICT(fingerprint) DO UPDATE SET value = excluded.value
+        INSERT INTO session_fingerprints (fingerprint, value, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(fingerprint) DO UPDATE SET
+          value = excluded.value,
+          updated_at = excluded.updated_at
       `)
-      .run(fingerprint, JSON.stringify(record));
+      .run(fingerprint, JSON.stringify(record), now);
+
+    this.maybePruneStoredData(now);
   }
 }
