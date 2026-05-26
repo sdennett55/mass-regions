@@ -7,6 +7,8 @@ const DEFAULT_SESSION_COOKIE_NAME = "mr_sid"
 const DEFAULT_SESSION_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 const DEFAULT_SQLITE_FILENAME = "mass-regions.sqlite"
 
+type SessionCookieSameSite = "lax" | "strict" | "none"
+
 function parseBoolean(value: string | undefined, fallback: boolean) {
   if (typeof value !== "string") {
     return fallback
@@ -41,6 +43,27 @@ function parseSessionCookieMaxAgeMs(value: string | undefined) {
   return Number.isFinite(parsedValue) && parsedValue > 0
     ? parsedValue
     : DEFAULT_SESSION_COOKIE_MAX_AGE_MS
+}
+
+function parseSessionCookieSameSite(
+  value: string | undefined,
+  fallback: SessionCookieSameSite,
+) {
+  if (typeof value !== "string") {
+    return fallback
+  }
+
+  const normalizedValue = value.trim().toLowerCase()
+
+  if (
+    normalizedValue === "lax" ||
+    normalizedValue === "strict" ||
+    normalizedValue === "none"
+  ) {
+    return normalizedValue
+  }
+
+  return fallback
 }
 
 function resolveDatabasePath(
@@ -101,6 +124,10 @@ export const serverConfig = {
   ),
   sessionCookieName:
     process.env.SESSION_COOKIE_NAME?.trim() || DEFAULT_SESSION_COOKIE_NAME,
+  sessionCookieSameSite: parseSessionCookieSameSite(
+    process.env.SESSION_COOKIE_SAME_SITE,
+    isProduction ? "none" : "lax",
+  ),
   sessionSecret,
   sseHeartbeatMs: 15_000,
   useSecureCookies: parseBoolean(process.env.SECURE_COOKIES, isProduction),

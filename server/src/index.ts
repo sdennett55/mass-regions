@@ -15,6 +15,7 @@ import type {
 } from "./protocol.ts"
 
 const app = express()
+app.set("trust proxy", 3)
 const persistence = new ServerPersistence(serverConfig.databasePath)
 const store = new TerritoryGameStore(persistence)
 const sessionManager = new AnonymousSessionManager(persistence)

@@ -137,7 +137,7 @@ export class AnonymousSessionManager {
     response.cookie(serverConfig.sessionCookieName, signSessionId(sessionId), {
       httpOnly: true,
       maxAge: serverConfig.sessionCookieMaxAgeMs,
-      sameSite: "lax",
+      sameSite: serverConfig.sessionCookieSameSite,
       secure: serverConfig.useSecureCookies,
     });
   }
