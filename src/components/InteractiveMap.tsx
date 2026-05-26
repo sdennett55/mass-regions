@@ -35,6 +35,7 @@ const MAP_VIEW_STORAGE_KEY = 'mass-regions:view'
 const MAP_SETTINGS_STORAGE_KEY = 'mass-regions:settings'
 const TOUCH_HOVER_BLOCK_MS = 800
 const RENDER_BUFFER_RATIO = 0.18
+const REGIONS_MODE_QUERY_VALUE = 'regions'
 
 type Viewport = {
   width: number
@@ -268,6 +269,62 @@ function loadStoredMapSettings(): StoredMapSettings | null {
   }
 }
 
+function getBattleModeOverrideFromUrl() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const modeParam = new URLSearchParams(window.location.search).get('mode')
+    if (!modeParam) {
+      return null
+    }
+
+    return modeParam.trim().toLowerCase() === REGIONS_MODE_QUERY_VALUE ? false : null
+  } catch {
+    return null
+  }
+}
+
+function loadInitialMapSettings() {
+  const storedSettings = loadStoredMapSettings()
+  const battleModeOverride = getBattleModeOverrideFromUrl()
+
+  if (battleModeOverride === null) {
+    return storedSettings
+  }
+
+  return {
+    battleMode: battleModeOverride,
+    showTownLabels: storedSettings?.showTownLabels ?? true,
+  }
+}
+
+function syncBattleModeUrl(isBattleMode: boolean) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    const url = new URL(window.location.href)
+
+    if (isBattleMode) {
+      url.searchParams.delete('mode')
+    } else {
+      url.searchParams.set('mode', REGIONS_MODE_QUERY_VALUE)
+    }
+
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(window.history.state, '', nextUrl)
+    }
+  } catch {
+    // Ignore URL write failures so the map can keep working in restricted contexts.
+  }
+}
+
 function saveStoredMapSettings(settings: StoredMapSettings) {
   if (typeof window === 'undefined') {
     return
@@ -311,7 +368,7 @@ function getPreviewMatrix(
 }
 
 function InteractiveMap() {
-  const initialSettings = loadStoredMapSettings()
+  const initialSettings = loadInitialMapSettings()
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const mapLayerRef = useRef<HTMLDivElement | null>(null)
   const settingsPanelRef = useRef<HTMLDivElement | null>(null)
@@ -341,7 +398,7 @@ function InteractiveMap() {
   const [selectedTownId, setSelectedTownId] = useState<string | null>(null)
   const {
     actionPoints,
-    captureActivityEvents,
+    activityEvents,
     capturedTownCount,
     contestedTownCount,
     controlCounts,
@@ -596,6 +653,10 @@ function InteractiveMap() {
       showTownLabels,
     })
   }, [isBattleMode, showTownLabels])
+
+  useEffect(() => {
+    syncBattleModeUrl(isBattleMode)
+  }, [isBattleMode])
 
   useEffect(() => {
     const element = viewportRef.current
@@ -1142,7 +1203,7 @@ function InteractiveMap() {
       ) : null}
 
       {isBattleMode ? (
-        <ActivityFeed events={captureActivityEvents} now={serverNow} />
+        <ActivityFeed events={activityEvents} now={serverNow} />
       ) : null}
 
       <div

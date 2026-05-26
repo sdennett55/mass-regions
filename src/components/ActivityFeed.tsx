@@ -10,10 +10,10 @@ import { Bell } from 'lucide-react'
 
 import { formatTownLabel, getRegionColor } from '../data/massRegions'
 import { formatDurationShort } from '../game/logic'
-import type { CaptureActivityEvent } from '../game/types'
+import type { ActivityEvent } from '../game/types'
 
 type ActivityFeedProps = {
-  events: CaptureActivityEvent[]
+  events: ActivityEvent[]
   now: number
 }
 
@@ -26,6 +26,30 @@ function formatActivityTimestamp(timestamp: number, now: number) {
   return `${timeFormatter.format(timestamp)} - ${formatDurationShort(
     Math.max(0, now - timestamp),
   )} ago`
+}
+
+function getActivityTitle(event: ActivityEvent) {
+  if (event.kind === 'capture') {
+    return `${formatTownLabel(event.townName)} captured by ${event.region}`
+  }
+
+  if (event.kind === 'total-control') {
+    return `${event.region} controls the entire map`
+  }
+
+  return `${event.region} now controls 50% of the map`
+}
+
+function getActivityDescription(event: ActivityEvent) {
+  if (event.kind === 'capture') {
+    return null
+  }
+
+  if (event.kind === 'total-control') {
+    return `${event.territoryTotal} of ${event.territoryTotal} territories`
+  }
+
+  return `${event.territoryCount} of ${event.territoryTotal} territories`
 }
 
 function ActivityFeed({ events, now }: ActivityFeedProps) {
@@ -138,7 +162,7 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
                 Activity
               </p>
               <p className="mt-1 text-sm font-semibold text-slate-950">
-                Recent captures
+                Major milestones
               </p>
             </div>
 
@@ -158,10 +182,15 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
                         />
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-slate-950">
-                            {formatTownLabel(event.townName)} captured by {event.region}
+                            {getActivityTitle(event)}
                           </p>
+                          {getActivityDescription(event) ? (
+                            <p className="mt-1 text-xs font-medium text-slate-600">
+                              {getActivityDescription(event)}
+                            </p>
+                          ) : null}
                           <p className="mt-1 text-xs font-medium text-slate-500">
-                            {formatActivityTimestamp(event.capturedAt, now)}
+                            {formatActivityTimestamp(event.occurredAt, now)}
                           </p>
                         </div>
                       </div>
@@ -170,7 +199,7 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
                 </div>
               ) : (
                 <div className="rounded-2xl border border-dashed border-slate-200 px-3 py-4 text-sm font-medium text-slate-500">
-                  No captures yet this session.
+                  No major activity yet this session.
                 </div>
               )}
             </div>

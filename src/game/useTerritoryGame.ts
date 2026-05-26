@@ -21,7 +21,7 @@ import {
 import { sharedTownNeighbors } from "./townNeighbors";
 import type { ServerGameSnapshot } from "./serverProtocol";
 import type {
-  CaptureActivityEvent,
+  ActivityEvent,
   PlayerAction,
   RegionName,
   TownName,
@@ -32,7 +32,10 @@ type ServerClockAnchor = {
   serverTime: number;
 };
 
-const MAX_CAPTURE_ACTIVITY_EVENTS = 12;
+const MAX_ACTIVITY_EVENTS = 12;
+const ATTACK_SOUND_SRC = "/sounds/attack.mp3";
+const CAPTURE_SOUND_SRC = "/sounds/capture.mp3";
+const DEFEND_SOUND_SRC = "/sounds/defend.mp3";
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
@@ -46,15 +49,36 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-function getCaptureActivityEvents(
+function createSound(src: string) {
+  if (typeof Audio === "undefined") {
+    return null;
+  }
+
+  const audio = new Audio(src);
+  audio.preload = "auto";
+  return audio;
+}
+
+function playSound(audio: HTMLAudioElement | null) {
+  if (!audio) {
+    return;
+  }
+
+  audio.currentTime = 0;
+  void audio.play().catch(() => {
+    // Ignore blocked playback so actions can continue silently.
+  });
+}
+
+function getActivityEvents(
   previousSnapshot: ServerGameSnapshot,
   nextSnapshot: ServerGameSnapshot,
 ) {
   if (previousSnapshot.revision === nextSnapshot.revision) {
-    return [] as CaptureActivityEvent[];
+    return [] as ActivityEvent[];
   }
 
-  const events: CaptureActivityEvent[] = [];
+  const events: ActivityEvent[] = [];
 
   for (const [townName, nextTown] of Object.entries(nextSnapshot.season.towns)) {
     const previousTown = previousSnapshot.season.towns[townName];
@@ -69,14 +93,48 @@ function getCaptureActivityEvents(
     }
 
     events.push({
-      capturedAt: nextTown.lastCapturedAt,
       id: `${townName}:${nextTown.lastCapturedAt}`,
+      kind: "capture",
+      occurredAt: nextTown.lastCapturedAt,
       region: nextTown.currentRegion,
       townName,
     });
   }
 
-  return events.sort((a, b) => b.capturedAt - a.capturedAt);
+  const territoryTotal = Object.keys(nextSnapshot.season.towns).length;
+
+  for (const [region, nextControlCount] of Object.entries(nextSnapshot.controlCounts)) {
+    const previousControlCount = previousSnapshot.controlCounts[region as RegionName] ?? 0;
+    const crossedMajorityThreshold =
+      previousControlCount / territoryTotal < 0.5 &&
+      nextControlCount / territoryTotal >= 0.5;
+    const reachedTotalControl =
+      previousControlCount < territoryTotal && nextControlCount === territoryTotal;
+
+    if (reachedTotalControl) {
+      events.push({
+        id: `total-control:${region}:${nextSnapshot.revision}`,
+        kind: "total-control",
+        occurredAt: nextSnapshot.serverTime,
+        region: region as RegionName,
+        territoryTotal,
+      });
+      continue;
+    }
+
+    if (crossedMajorityThreshold) {
+      events.push({
+        id: `majority-control:${region}:${nextSnapshot.revision}`,
+        kind: "majority-control",
+        occurredAt: nextSnapshot.serverTime,
+        region: region as RegionName,
+        territoryCount: nextControlCount,
+        territoryTotal,
+      });
+    }
+  }
+
+  return events.sort((a, b) => b.occurredAt - a.occurredAt);
 }
 
 export function useTerritoryGame() {
@@ -94,12 +152,13 @@ export function useTerritoryGame() {
   const [captureVisualServerNow, setCaptureVisualServerNow] = useState(
     () => Date.now(),
   );
-  const [captureActivityEvents, setCaptureActivityEvents] = useState<
-    CaptureActivityEvent[]
-  >([]);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const actionInFlightRef = useRef(false);
+  const attackAudioRef = useRef<HTMLAudioElement | null>(null);
+  const captureAudioRef = useRef<HTMLAudioElement | null>(null);
+  const defendAudioRef = useRef<HTMLAudioElement | null>(null);
   const hasAppliedFirstServerSnapshotRef = useRef(false);
   const refreshInFlightRef = useRef(false);
   const clockAnchorRef = useRef(clockAnchor);
@@ -113,6 +172,27 @@ export function useTerritoryGame() {
     snapshotRef.current = snapshot;
   }, [snapshot]);
 
+  useEffect(() => {
+    attackAudioRef.current = createSound(ATTACK_SOUND_SRC);
+    captureAudioRef.current = createSound(CAPTURE_SOUND_SRC);
+    defendAudioRef.current = createSound(DEFEND_SOUND_SRC);
+
+    return () => {
+      for (const audio of [
+        attackAudioRef.current,
+        captureAudioRef.current,
+        defendAudioRef.current,
+      ]) {
+        if (!audio) {
+          continue;
+        }
+
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    };
+  }, []);
+
   const applySnapshot = useCallback((nextSnapshot: ServerGameSnapshot) => {
     const previousSnapshot = snapshotRef.current;
     const receivedAt = Date.now();
@@ -122,10 +202,10 @@ export function useTerritoryGame() {
     };
 
     if (hasAppliedFirstServerSnapshotRef.current) {
-      const nextEvents = getCaptureActivityEvents(previousSnapshot, nextSnapshot);
+      const nextEvents = getActivityEvents(previousSnapshot, nextSnapshot);
 
       if (nextEvents.length > 0) {
-        setCaptureActivityEvents((currentEvents) => {
+        setActivityEvents((currentEvents) => {
           const seenEventIds = new Set(nextEvents.map((event) => event.id));
           const mergedEvents = [
             ...nextEvents,
@@ -133,8 +213,8 @@ export function useTerritoryGame() {
           ];
 
           return mergedEvents
-            .sort((a, b) => b.capturedAt - a.capturedAt)
-            .slice(0, MAX_CAPTURE_ACTIVITY_EVENTS);
+            .sort((a, b) => b.occurredAt - a.occurredAt)
+            .slice(0, MAX_ACTIVITY_EVENTS);
         });
       }
     } else {
@@ -328,6 +408,7 @@ export function useTerritoryGame() {
       }
 
       actionInFlightRef.current = true;
+      const previousTown = snapshotRef.current.season.towns[action.townName];
 
       try {
         const result = await postServerAction(action);
@@ -345,6 +426,21 @@ export function useTerritoryGame() {
               : result.error,
           );
           return;
+        }
+
+        if (action.type === "invade") {
+          const nextTown = result.snapshot.season.towns[action.townName];
+
+          if (
+            previousTown &&
+            nextTown &&
+            typeof nextTown.lastCapturedAt === "number" &&
+            nextTown.lastCapturedAt !== previousTown.lastCapturedAt &&
+            previousTown.currentRegion !== nextTown.currentRegion &&
+            nextTown.currentRegion === action.invadingRegion
+          ) {
+            playSound(captureAudioRef.current);
+          }
         }
 
         setStatusMessage(null);
@@ -393,7 +489,7 @@ export function useTerritoryGame() {
 
   return {
     actionPoints: resolvedPlayerState.actionPoints,
-    captureActivityEvents,
+    activityEvents,
     capturedTownCount,
     contestedTownCount: snapshot.contestedTownCount,
     controlCounts: snapshot.controlCounts,
@@ -401,10 +497,14 @@ export function useTerritoryGame() {
     getTownContext,
     legendGroups,
     nextActionPointIn,
-    onDefend: (townName: TownName) =>
-      performAction({ townName, type: "defend" }),
-    onInvade: (townName: TownName, invadingRegion: RegionName) =>
-      performAction({ invadingRegion, townName, type: "invade" }),
+    onDefend: (townName: TownName) => {
+      playSound(defendAudioRef.current);
+      return performAction({ townName, type: "defend" });
+    },
+    onInvade: (townName: TownName, invadingRegion: RegionName) => {
+      playSound(attackAudioRef.current);
+      return performAction({ invadingRegion, townName, type: "invade" });
+    },
     season: snapshot.season,
     seasonLabel: snapshot.seasonLabel,
     serverNow,

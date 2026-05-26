@@ -81,9 +81,26 @@ export interface RegionControlGroup {
   towns: string[]
 }
 
-export interface CaptureActivityEvent {
-  id: string
-  capturedAt: number
-  region: RegionName
-  townName: TownName
-}
+export type ActivityEvent =
+  | {
+      id: string
+      kind: 'capture'
+      occurredAt: number
+      region: RegionName
+      townName: TownName
+    }
+  | {
+      id: string
+      kind: 'majority-control'
+      occurredAt: number
+      region: RegionName
+      territoryCount: number
+      territoryTotal: number
+    }
+  | {
+      id: string
+      kind: 'total-control'
+      occurredAt: number
+      region: RegionName
+      territoryTotal: number
+    }
