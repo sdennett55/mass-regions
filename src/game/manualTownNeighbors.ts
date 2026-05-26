@@ -84,6 +84,7 @@ export const manualTownNeighbors = {
     "SEEKONK",
   ],
   AUBURN: ["OXFORD", "LEICESTER", "MILLBURY", "WORCESTER"],
+  AVON: ["BROCKTON", "STOUGHTON", "RANDOLPH", "HOLBROOK"],
   AYER: ["SHIRLEY", "GROTON", "LITTLETON", "HARVARD"],
   BARNSTABLE: ["MASHPEE", "SANDWICH", "YARMOUTH"],
   BARRE: [
@@ -313,6 +314,7 @@ export const manualTownNeighbors = {
   ],
   CHILMARK: ["AQUINNAH", "WEST_TISBURY"],
   CLARKSBURG: ["FLORIDA", "NORTH_ADAMS", "WILLIAMSTOWN"],
+  CLINTON: ["LANCASTER", "BOLTON", "BERLIN", "BOYLSTON", "STERLING"],
   COHASSET: ["HINGHAM", "HULL", "SCITUATE"],
   COLRAIN: ["LEYDEN", "GREENFIELD", "SHELBURNE", "CHARLEMONT", "HEATH"],
   CONCORD: [
@@ -627,6 +629,8 @@ export const manualTownNeighbors = {
     "RUTLAND",
     "BARRE",
   ],
+  HUDSON: ["BOLTON", "STOW", "MARLBOROUGH", "SUDBURY", "BERLIN"],
+  HULL: ["COHASSET", "HINGHAM"],
   HUNTINGTON: [
     "CHESTER",
     "WORTHINGTON",
@@ -773,6 +777,14 @@ export const manualTownNeighbors = {
     "EVERETT",
     "STONEHAM",
   ],
+  MEDWAY: [
+    "MILFORD",
+    "HOLLISTON",
+    "MILLIS",
+    "NORFOLK",
+    "FRANKLIN",
+    "BELLINGHAM",
+  ],
   MELROSE: ["MALDEN", "SAUGUS", "STONEHAM", "WAKEFIELD"],
   MENDON: [
     "BLACKSTONE",
@@ -854,6 +866,7 @@ export const manualTownNeighbors = {
     "WESTON",
   ],
   NEW_ASHFORD: ["WILLIAMSTOWN", "ADAMS", "CHESHIRE", "LANESBOROUGH", "HANCOCK"],
+  NEW_BEDFORD: ["DARTMOUTH", "FREETOWN", "ACUSHNET", "FAIRHAVEN"],
   NEW_BRAINTREE: [
     "BARRE",
     "OAKHAM",
@@ -882,6 +895,14 @@ export const manualTownNeighbors = {
     "WALPOLE",
     "FOXBOROUGH",
     "WRENTHAM",
+  ],
+  NORTHBOROUGH: [
+    "SOUTHBOROUGH",
+    "MARLBOROUGH",
+    "BERLIN",
+    "BOYLSTON",
+    "SHREWSBURY",
+    "WESTBOROUGH",
   ],
   NORTHBRIDGE: ["SUTTON", "GRAFTON", "UPTON", "MENDON", "UXBRIDGE"],
   NORTHFIELD: ["BERNARDSTON", "GILL", "ERVING", "WARWICK"],
@@ -1043,6 +1064,7 @@ export const manualTownNeighbors = {
     "NORTH_READING",
     "WILMINGTON",
   ],
+  REHOBOTH: ["SEEKONK", "ATTLEBORO", "NORTON", "TAUNTON", "DIGHTON", "SWANSEA"],
   REVERE: [
     "BOSTON",
     "CHELSEA",
@@ -1105,6 +1127,7 @@ export const manualTownNeighbors = {
     "ADAMS",
   ],
   SCITUATE: ["MARSHFIELD", "NORWELL", "HINGHAM", "COHASSET"],
+  SEEKONK: ["REHOBOTH", "SWANSEA", "ATTLEBORO"],
   SHARON: ["WALPOLE", "STOUGHTON", "FOXBOROUGH", "NORWOOD", "CANTON", "EASTON"],
   SHEFFIELD: [
     "GREAT_BARRINGTON",
@@ -1203,6 +1226,7 @@ export const manualTownNeighbors = {
     "WINCHESTER",
     "WOBURN",
   ],
+  STOUGHTON: ["CANTON", "RANDOLPH", "AVON", "BROCKTON", "EASTON", "SHARON"],
   STOW: [
     "HUDSON",
     "BOLTON",
