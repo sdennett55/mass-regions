@@ -41,10 +41,6 @@ body {
   animation: town-captured-pulse 1.8s ease-in-out infinite;
 }
 
-.action-points-spent {
-  animation: action-points-spent 1.1s ease-out;
-}
-
 @keyframes town-frontline-pulse {
   0%,
   100% {
@@ -64,19 +60,5 @@ body {
 
   50% {
     stroke-opacity: 1;
-  }
-}
-
-@keyframes action-points-spent {
-  0% {
-    color: #f87171;
-  }
-
-  65% {
-    color: #f87171;
-  }
-
-  100% {
-    color: #ffffff;
   }
 }

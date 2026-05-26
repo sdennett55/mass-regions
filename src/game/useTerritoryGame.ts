@@ -20,12 +20,19 @@ import {
 } from "./serverClient";
 import { sharedTownNeighbors } from "./townNeighbors";
 import type { ServerGameSnapshot } from "./serverProtocol";
-import type { PlayerAction, RegionName, TownName } from "./types";
+import type {
+  CaptureActivityEvent,
+  PlayerAction,
+  RegionName,
+  TownName,
+} from "./types";
 
 type ServerClockAnchor = {
   clientTime: number;
   serverTime: number;
 };
+
+const MAX_CAPTURE_ACTIVITY_EVENTS = 12;
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
@@ -37,6 +44,39 @@ function getApproxServerNow(anchor: ServerClockAnchor, clientNow: number) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function getCaptureActivityEvents(
+  previousSnapshot: ServerGameSnapshot,
+  nextSnapshot: ServerGameSnapshot,
+) {
+  if (previousSnapshot.revision === nextSnapshot.revision) {
+    return [] as CaptureActivityEvent[];
+  }
+
+  const events: CaptureActivityEvent[] = [];
+
+  for (const [townName, nextTown] of Object.entries(nextSnapshot.season.towns)) {
+    const previousTown = previousSnapshot.season.towns[townName];
+
+    if (
+      !previousTown ||
+      typeof nextTown.lastCapturedAt !== "number" ||
+      nextTown.lastCapturedAt === previousTown.lastCapturedAt ||
+      nextTown.currentRegion === previousTown.currentRegion
+    ) {
+      continue;
+    }
+
+    events.push({
+      capturedAt: nextTown.lastCapturedAt,
+      id: `${townName}:${nextTown.lastCapturedAt}`,
+      region: nextTown.currentRegion,
+      townName,
+    });
+  }
+
+  return events.sort((a, b) => b.capturedAt - a.capturedAt);
 }
 
 export function useTerritoryGame() {
@@ -54,10 +94,13 @@ export function useTerritoryGame() {
   const [captureVisualServerNow, setCaptureVisualServerNow] = useState(
     () => Date.now(),
   );
-  const [spendFeedbackKey, setSpendFeedbackKey] = useState<number | null>(null);
+  const [captureActivityEvents, setCaptureActivityEvents] = useState<
+    CaptureActivityEvent[]
+  >([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const actionInFlightRef = useRef(false);
+  const hasAppliedFirstServerSnapshotRef = useRef(false);
   const refreshInFlightRef = useRef(false);
   const clockAnchorRef = useRef(clockAnchor);
   const snapshotRef = useRef(snapshot);
@@ -71,11 +114,32 @@ export function useTerritoryGame() {
   }, [snapshot]);
 
   const applySnapshot = useCallback((nextSnapshot: ServerGameSnapshot) => {
+    const previousSnapshot = snapshotRef.current;
     const receivedAt = Date.now();
     const nextClockAnchor = {
       clientTime: receivedAt,
       serverTime: nextSnapshot.serverTime,
     };
+
+    if (hasAppliedFirstServerSnapshotRef.current) {
+      const nextEvents = getCaptureActivityEvents(previousSnapshot, nextSnapshot);
+
+      if (nextEvents.length > 0) {
+        setCaptureActivityEvents((currentEvents) => {
+          const seenEventIds = new Set(nextEvents.map((event) => event.id));
+          const mergedEvents = [
+            ...nextEvents,
+            ...currentEvents.filter((event) => !seenEventIds.has(event.id)),
+          ];
+
+          return mergedEvents
+            .sort((a, b) => b.capturedAt - a.capturedAt)
+            .slice(0, MAX_CAPTURE_ACTIVITY_EVENTS);
+        });
+      }
+    } else {
+      hasAppliedFirstServerSnapshotRef.current = true;
+    }
 
     clockAnchorRef.current = nextClockAnchor;
     snapshotRef.current = nextSnapshot;
@@ -283,7 +347,6 @@ export function useTerritoryGame() {
           return;
         }
 
-        setSpendFeedbackKey((currentKey) => (currentKey ?? 0) + 1);
         setStatusMessage(null);
       } catch (error) {
         setStatusMessage(
@@ -330,6 +393,7 @@ export function useTerritoryGame() {
 
   return {
     actionPoints: resolvedPlayerState.actionPoints,
+    captureActivityEvents,
     capturedTownCount,
     contestedTownCount: snapshot.contestedTownCount,
     controlCounts: snapshot.controlCounts,
@@ -339,13 +403,12 @@ export function useTerritoryGame() {
     nextActionPointIn,
     onDefend: (townName: TownName) =>
       performAction({ townName, type: "defend" }),
-    onDismissSpendFeedback: () => setSpendFeedbackKey(null),
     onInvade: (townName: TownName, invadingRegion: RegionName) =>
       performAction({ invadingRegion, townName, type: "invade" }),
     season: snapshot.season,
     seasonLabel: snapshot.seasonLabel,
+    serverNow,
     seasonTimeRemaining,
-    spendFeedbackKey,
     statusMessage,
     townVisualStates,
   };

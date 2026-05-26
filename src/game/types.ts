@@ -80,3 +80,10 @@ export interface RegionControlGroup {
   townCount: number
   towns: string[]
 }
+
+export interface CaptureActivityEvent {
+  id: string
+  capturedAt: number
+  region: RegionName
+  townName: TownName
+}

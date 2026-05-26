@@ -16,6 +16,8 @@ import type {
 } from "./serverProtocol";
 
 const DEFAULT_DEV_SERVER_URL = "http://localhost:4000";
+const REFILL_ACTION_POINTS_QUERY_PARAM = "refillActionPoints";
+const LEGACY_REFILL_ACTION_POINTS_QUERY_PARAM = "refillInfluence";
 
 function trimTrailingSlashes(value: string) {
   return value.replace(/\/+$/, "");
@@ -51,6 +53,33 @@ function buildGameServerUrl(
   return url;
 }
 
+function getDevStateRequestSearchParams() {
+  if (!import.meta.env.DEV || typeof window === "undefined") {
+    return undefined
+  }
+
+  try {
+    const currentSearchParams = new URLSearchParams(window.location.search)
+    const refillActionPointsParam =
+      currentSearchParams.get(REFILL_ACTION_POINTS_QUERY_PARAM) ??
+      currentSearchParams.get(LEGACY_REFILL_ACTION_POINTS_QUERY_PARAM)
+
+    if (
+      refillActionPointsParam === null ||
+      refillActionPointsParam === "0" ||
+      refillActionPointsParam.toLowerCase() === "false"
+    ) {
+      return undefined
+    }
+
+    return {
+      refillActionPoints: refillActionPointsParam,
+    }
+  } catch {
+    return undefined
+  }
+}
+
 async function parseJsonResponse<T>(response: Response) {
   const data = (await response.json()) as T | { error?: string };
 
@@ -66,13 +95,16 @@ async function parseJsonResponse<T>(response: Response) {
 }
 
 export async function fetchServerSnapshot(signal?: AbortSignal) {
-  const response = await fetch(buildGameServerUrl("api/state").toString(), {
+  const response = await fetch(
+    buildGameServerUrl("api/state", getDevStateRequestSearchParams()).toString(),
+    {
     credentials: "include",
     headers: {
       Accept: "application/json",
     },
     signal,
-  });
+  },
+  );
 
   const data = await parseJsonResponse<ServerStateResponse>(response);
   return data.snapshot;

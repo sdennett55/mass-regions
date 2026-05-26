@@ -88,6 +88,14 @@ export class TerritoryGameStore {
     return refreshedPlayer
   }
 
+  refillPlayerActionPoints(playerId: string, now = Date.now()) {
+    this.ensureSeason(now)
+    const nextPlayer = createPlayerState(now)
+    this.playerStates.set(playerId, nextPlayer)
+    this.persistence.savePlayerState(playerId, nextPlayer)
+    return this.getSnapshot(playerId, now)
+  }
+
   private getCapturedTownCount(snapshot: ServerGameSnapshot) {
     return Object.values(snapshot.townVisualStates).filter(
       (townVisualState) => townVisualState.isCaptureProtected,

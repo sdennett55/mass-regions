@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { Shield, Sword, X } from "lucide-react";
 
 import {
   formatTownLabel,
@@ -8,7 +8,6 @@ import {
 import {
   CAPTURE_POINTS_TO_CAPTURE,
   PLAYER_ACTION_COST,
-  PLAYER_MAX_ACTION_POINTS,
 } from "../game/constants";
 import { formatDurationShort } from "../game/logic";
 import type { TownBattleState, TownName } from "../game/types";
@@ -20,12 +19,9 @@ type TownBattlePanelProps = {
   actionPoints: number;
   isCaptureProtected: boolean;
   neighboringTowns: TownName[];
-  nextActionPointIn: number;
   onClose: () => void;
   onDefend: () => void;
-  onDismissSpendFeedback: () => void;
   onInvade: (region: RegionName) => void;
-  spendFeedbackKey: number | null;
   statusMessage: string | null;
   validInvadingRegions: RegionName[];
 };
@@ -37,12 +33,9 @@ function TownBattlePanel({
   actionPoints,
   isCaptureProtected,
   neighboringTowns,
-  nextActionPointIn,
   onClose,
   onDefend,
-  onDismissSpendFeedback,
   onInvade,
-  spendFeedbackKey,
   statusMessage,
   validInvadingRegions,
 }: TownBattlePanelProps) {
@@ -56,8 +49,9 @@ function TownBattlePanel({
   const defendLabel = isCaptureProtected
     ? "Protected"
     : battleState.isContested
-      ? `Defend ${battleState.currentRegion} (-1)`
+      ? `Defend ${battleState.currentRegion}`
       : "No invasion to defend";
+  const defendStatusLabel = isCaptureProtected ? "Protected" : null;
 
   return (
     <aside
@@ -144,13 +138,13 @@ function TownBattlePanel({
               style={{ width: contestPercent }}
             />
           </div>
-          <p className="mt-2 text-sm font-medium text-slate-700">
-            {isCaptureProtected
-              ? "Protected after capture."
-              : battleState.isContested && battleState.contestingRegion
-                ? `${battleState.contestingRegion} is attemping to capture this town.`
-                : "No active invasion."}
-          </p>
+          {isCaptureProtected || battleState.isContested ? (
+            <p className="mt-2 text-sm font-medium text-slate-700">
+              {isCaptureProtected
+                ? "Protected after capture."
+                : `${battleState.contestingRegion} is attemping to capture this town.`}
+            </p>
+          ) : null}
         </div>
 
         {isCaptureProtected ? (
@@ -177,43 +171,39 @@ function TownBattlePanel({
           </div>
         </div>
 
-        <div className="rounded-2xl bg-slate-950 px-3 py-3 text-white">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-300">
-                Action Points
-              </p>
-              <div className="mt-1 flex items-center gap-2">
-                <p
-                  key={spendFeedbackKey ?? 0}
-                  className={`text-lg font-semibold ${
-                    spendFeedbackKey !== null ? "action-points-spent" : ""
-                  }`}
-                  onAnimationEnd={
-                    spendFeedbackKey !== null ? onDismissSpendFeedback : undefined
-                  }
-                >
-                  {actionPoints}/{PLAYER_MAX_ACTION_POINTS}
-                </p>
-              </div>
-            </div>
-            <p className="text-right text-xs font-medium text-slate-300">
-              {nextActionPointIn > 0
-                ? `+1 in ${formatDurationShort(nextActionPointIn)}`
-                : "At max points"}
-            </p>
-          </div>
-        </div>
-
         <div className="space-y-3">
           <button
-            className="w-full rounded-2xl bg-slate-950 px-3 py-3 text-sm font-semibold text-white transition enabled:cursor-pointer enabled:hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className={`w-full rounded-2xl border px-3 py-3 text-sm font-semibold transition ${
+              canDefend
+                ? "border-sky-500 bg-sky-500/14 text-sky-950 shadow-[0_10px_24px_rgba(14,165,233,0.12)] enabled:cursor-pointer enabled:hover:border-sky-400 enabled:hover:bg-sky-500/22"
+                : "border-slate-200 bg-slate-100 text-slate-400 disabled:cursor-not-allowed"
+            }`}
             data-ui-control="true"
             disabled={!canDefend}
             onClick={onDefend}
             type="button"
           >
-            {defendLabel}
+            <span className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Shield className="h-4 w-4 shrink-0" strokeWidth={2.1} />
+                <span
+                  className="h-3 w-3 rounded-full bg-white/90 shadow-inner shadow-black/10"
+                  style={{
+                    backgroundColor: getRegionColor(battleState.currentRegion),
+                  }}
+                />
+                {defendLabel}
+              </span>
+              {defendStatusLabel ? (
+                <span
+                  className={`text-xs ${
+                    canDefend ? "text-sky-700" : "text-slate-500"
+                  }`}
+                >
+                  {defendStatusLabel}
+                </span>
+              ) : null}
+            </span>
           </button>
 
           <div className="space-y-2">
@@ -227,26 +217,44 @@ function TownBattlePanel({
                     !!lockedAttackerRegion && lockedAttackerRegion !== region;
                   const canCaptureForRegion =
                     canAct && !isCaptureProtected && !isLockedOut;
+                  const attackStatusLabel = isCaptureProtected
+                    ? "Protected"
+                    : isLockedOut
+                      ? "Locked"
+                      : null;
 
                   return (
                     <button
                       key={region}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-3 text-left text-sm font-semibold text-slate-950 transition enabled:cursor-pointer enabled:hover:border-slate-300 enabled:hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                      className={`flex items-center justify-between rounded-2xl border px-3 py-3 text-left text-sm font-semibold transition ${
+                        canCaptureForRegion
+                          ? "border-rose-500 bg-rose-500/14 text-rose-900 shadow-[0_10px_24px_rgba(225,29,72,0.12)] enabled:cursor-pointer enabled:hover:bg-rose-500/22 enabled:hover:border-rose-400"
+                          : "border-slate-200 bg-slate-100 text-slate-400 disabled:cursor-not-allowed"
+                      }`}
                       data-ui-control="true"
                       disabled={!canCaptureForRegion}
                       onClick={() => onInvade(region)}
                       type="button"
                     >
                       <span className="flex items-center gap-2">
+                        <Sword className="h-4 w-4 shrink-0" strokeWidth={2.1} />
                         <span
-                          className="h-3 w-3 rounded-full shadow-inner shadow-black/10"
+                          className="h-3 w-3 rounded-full bg-white/90 shadow-inner shadow-black/10"
                           style={{ backgroundColor: getRegionColor(region) }}
                         />
-                        Capture for {region}
+                        Attack for {region}
                       </span>
-                      <span className="text-xs text-slate-500">
-                        {isCaptureProtected ? "Protected" : isLockedOut ? "Locked" : "-1"}
-                      </span>
+                      {attackStatusLabel ? (
+                        <span
+                          className={`text-xs ${
+                            canCaptureForRegion
+                              ? "text-rose-700"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          {attackStatusLabel}
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}

@@ -58,6 +58,15 @@ app.use(
 )
 app.use(express.json())
 
+function isTruthyQueryParam(value: unknown) {
+  if (typeof value !== "string") {
+    return false
+  }
+
+  const normalizedValue = value.trim().toLowerCase()
+  return normalizedValue !== "" && normalizedValue !== "0" && normalizedValue !== "false"
+}
+
 function isPlayerAction(value: unknown): value is PlayerAction {
   if (!value || typeof value !== "object") {
     return false
@@ -91,6 +100,17 @@ app.get(
   stateLimiter,
   (request, response: Response<ServerStateResponse | { error: string }>) => {
     const { sessionId } = sessionManager.resolveSession(request, response)
+    const shouldRefillActionPoints =
+      !serverConfig.isProduction &&
+      (isTruthyQueryParam(request.query.refillActionPoints) ||
+        isTruthyQueryParam(request.query.refillInfluence))
+
+    if (shouldRefillActionPoints) {
+      response.json({
+        snapshot: store.refillPlayerActionPoints(sessionId),
+      })
+      return
+    }
 
     response.json({
       snapshot: store.getSnapshot(sessionId),
