@@ -144,7 +144,7 @@ export function createInitialServerSnapshot(now = Date.now()): ServerGameSnapsho
     player,
     revision: 0,
     season,
-    seasonLabel: `Season ${seasonWindow.seasonNumber}`,
+    seasonLabel: `Week ${seasonWindow.seasonNumber}`,
     seasonTimeRemaining: getSeasonTimeRemaining(season, now),
     serverTime: now,
     townVisualStates: buildTownVisualStates(season, sharedTownNeighbors, now),

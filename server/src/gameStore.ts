@@ -118,7 +118,7 @@ export class TerritoryGameStore {
       player,
       revision: this.revision,
       season: this.seasonState,
-      seasonLabel: `Season ${seasonWindow.seasonNumber}`,
+      seasonLabel: `Week ${seasonWindow.seasonNumber}`,
       seasonTimeRemaining: getSeasonTimeRemaining(this.seasonState, now),
       serverTime: now,
       townVisualStates,
