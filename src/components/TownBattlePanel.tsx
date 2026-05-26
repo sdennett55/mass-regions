@@ -106,7 +106,7 @@ function TownBattlePanel({
           </div>
 
           <button
-            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
+            className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50"
             data-ui-control="true"
             onClick={onClose}
             type="button"
@@ -140,7 +140,7 @@ function TownBattlePanel({
             <p className="mt-2 text-sm font-medium text-slate-700">
               {isCaptureProtected
                 ? "Protected after capture."
-                : `${battleState.contestingRegion} is attemping to capture this town.`}
+                : `${battleState.contestingRegion} is attemping to capture this territory!`}
             </p>
           ) : null}
         </div>
@@ -168,7 +168,7 @@ function TownBattlePanel({
               <span className="flex items-center gap-2">
                 <Shield className="h-4 w-4 shrink-0" strokeWidth={2.1} />
                 <span
-                  className="h-3 w-3 rounded-full bg-white/90 shadow-inner shadow-black/10"
+                  className="h-3 w-3 shrink-0 rounded-full bg-white/90 shadow-inner shadow-black/10"
                   style={{
                     backgroundColor: getRegionColor(battleState.currentRegion),
                   }}
@@ -220,7 +220,7 @@ function TownBattlePanel({
                       <span className="flex items-center gap-2">
                         <Sword className="h-4 w-4 shrink-0" strokeWidth={2.1} />
                         <span
-                          className="h-3 w-3 rounded-full bg-white/90 shadow-inner shadow-black/10"
+                          className="h-3 w-3 shrink-0 rounded-full bg-white/90 shadow-inner shadow-black/10"
                           style={{ backgroundColor: getRegionColor(region) }}
                         />
                         Attack for {region}

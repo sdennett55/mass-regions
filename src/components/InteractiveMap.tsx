@@ -414,6 +414,12 @@ function InteractiveMap() {
     statusMessage,
     townVisualStates,
   } = useTerritoryGame()
+  const placeNounPlural = isBattleMode ? 'territories' : 'municipalities'
+  const labelsSettingLabel = isBattleMode
+    ? 'Territory names'
+    : 'Municipality names'
+  const legendDescription = `Browse all regions and ${placeNounPlural}`
+  const mapAriaLabel = `Map of Massachusetts ${placeNounPlural} colored by region`
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
@@ -1278,7 +1284,7 @@ function InteractiveMap() {
               <div className="flex items-center justify-between gap-3 border-b border-slate-200/70 px-4 py-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-950">
-                    Town names
+                    {labelsSettingLabel}
                   </p>
                   <p className="text-xs font-medium text-slate-500">
                     Show labels on the map
@@ -1308,7 +1314,7 @@ function InteractiveMap() {
                 <div>
                   <p className="text-sm font-semibold text-slate-950">Legend</p>
                   <p className="text-xs font-medium text-slate-500">
-                    Browse all regions and towns
+                    {legendDescription}
                   </p>
                 </div>
 
@@ -1395,7 +1401,7 @@ function InteractiveMap() {
                             {group.region}
                           </p>
                           <p className="text-xs font-medium text-slate-500">
-                            {group.townCount} towns
+                            {group.townCount} {placeNounPlural}
                           </p>
                         </div>
                       </div>
@@ -1464,7 +1470,7 @@ function InteractiveMap() {
                 {activeTown.town}
               </p>
               <p className="text-xs font-medium text-slate-600">
-                {activeTown.region} ({activeTown.controlCount} towns)
+                {activeTown.region} ({activeTown.controlCount} {placeNounPlural})
               </p>
               <p className="text-[11px] font-medium text-slate-500">
                 {isBattleMode && activeTown.battleState
@@ -1487,7 +1493,7 @@ function InteractiveMap() {
           style={mapLayerStyle}
         >
           <MassachusettsMap
-            aria-label="Map of Massachusetts towns colored by region"
+            aria-label={mapAriaLabel}
             className="block h-full w-full select-none"
             preserveAspectRatio="xMidYMid meet"
             role="img"

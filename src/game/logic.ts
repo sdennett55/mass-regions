@@ -414,7 +414,7 @@ export function applyAction(params: {
 
   if (!currentTown) {
     return {
-      error: "Town unavailable.",
+      error: "Territory unavailable.",
       ok: false,
       season,
     }
