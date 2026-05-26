@@ -10,7 +10,7 @@ import {
   PLAYER_ACTION_COST,
 } from "../game/constants";
 import { formatDurationShort } from "../game/logic";
-import type { TownBattleState, TownName } from "../game/types";
+import type { TownBattleState } from "../game/types";
 
 type TownBattlePanelProps = {
   battleState: TownBattleState;
@@ -18,7 +18,6 @@ type TownBattlePanelProps = {
   controlCount: number;
   actionPoints: number;
   isCaptureProtected: boolean;
-  neighboringTowns: TownName[];
   onClose: () => void;
   onDefend: () => void;
   onInvade: (region: RegionName) => void;
@@ -32,7 +31,6 @@ function TownBattlePanel({
   controlCount,
   actionPoints,
   isCaptureProtected,
-  neighboringTowns,
   onClose,
   onDefend,
   onInvade,
@@ -153,23 +151,6 @@ function TownBattlePanel({
             {` Reopens in ${formatDurationShort(captureProtectionRemaining)}.`}
           </div>
         ) : null}
-
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Neighbors
-          </p>
-          <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs font-medium text-slate-700">
-            {neighboringTowns.length ? (
-              neighboringTowns.map((townName) => (
-                <p key={townName}>{formatTownLabel(townName)}</p>
-              ))
-            ) : (
-              <p className="col-span-2 text-slate-500">
-                No direct land neighbors.
-              </p>
-            )}
-          </div>
-        </div>
 
         <div className="space-y-3">
           <button

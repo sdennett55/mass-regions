@@ -1053,7 +1053,11 @@ function InteractiveMap() {
     }
   }
 
-  const handlePointerLeave = () => {
+  const handlePointerLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (shouldIgnoreHover(event.pointerType)) {
+      return
+    }
+
     if (!gestureRef.current) {
       updateHoveredTownId(null)
     }
@@ -1434,7 +1438,6 @@ function InteractiveMap() {
           captureProtectionRemaining={selectedTownContext.captureProtectionRemaining}
           controlCount={controlCounts[selectedTownContext.town.currentRegion] ?? 0}
           isCaptureProtected={selectedTownContext.isCaptureProtected}
-          neighboringTowns={selectedTownContext.neighboringTowns}
           onClose={() => updateSelectedTownId(null)}
           onDefend={() => onDefend(selectedTownContext.town.townName)}
           onInvade={(region) => onInvade(selectedTownContext.town.townName, region)}
