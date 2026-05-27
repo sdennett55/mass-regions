@@ -6,7 +6,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronDown, ChevronRight, Info, Settings2, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Info,
+  RotateCcw,
+  Settings2,
+  X,
+} from "lucide-react";
 
 import {
   formatTownLabel,
@@ -25,6 +32,7 @@ import type { TownBattleState } from "../game/types";
 import ActivityFeed from "./ActivityFeed";
 import GameHud from "./GameHud";
 import MassachusettsMap from "./Map";
+import ShareButton from "./ShareButton";
 import TownBattlePanel from "./TownBattlePanel";
 
 const SVG_WIDTH = 2100;
@@ -108,7 +116,12 @@ function getInitialViewport() {
   const width = window.visualViewport?.width ?? window.innerWidth;
   const height = window.visualViewport?.height ?? window.innerHeight;
 
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
     return null;
   }
 
@@ -389,10 +402,7 @@ function saveBattleExplainerDismissed() {
   }
 
   try {
-    window.localStorage.setItem(
-      BATTLE_EXPLAINER_DISMISSED_STORAGE_KEY,
-      "1",
-    );
+    window.localStorage.setItem(BATTLE_EXPLAINER_DISMISSED_STORAGE_KEY, "1");
   } catch {
     // Ignore storage failures so the hint can still be dismissed for this session.
   }
@@ -455,7 +465,9 @@ function InteractiveMap() {
   const previewCameraRef = useRef<CameraState | null>(null);
   const lastTouchInteractionTimeRef = useRef(0);
 
-  const [viewport, setViewport] = useState<Viewport | null>(() => getInitialViewport());
+  const [viewport, setViewport] = useState<Viewport | null>(() =>
+    getInitialViewport(),
+  );
   const [camera, setCamera] = useState<CameraState | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLegendOpen, setIsLegendOpen] = useState(false);
@@ -1373,8 +1385,8 @@ function InteractiveMap() {
             />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-slate-700">
-                Select a territory to attack for a neighboring region, or
-                defend it from capture.
+                Select a territory to attack and capture for a neighboring
+                region, or defend it from capture.
               </p>
               <p className="mt-1 text-xs font-medium text-slate-500">
                 {hasLiveSnapshot
@@ -1525,15 +1537,18 @@ function InteractiveMap() {
           ) : null}
         </div>
 
+        <ShareButton />
+
         {!isAtInitialView ? (
           <button
+            aria-label="Reset view"
             data-ui-control="true"
-            className="pointer-events-auto relative z-10 cursor-pointer rounded-full border border-white/75 bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition hover:bg-slate-800"
+            className="pointer-events-auto relative z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/75 bg-slate-950 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition hover:bg-slate-800"
             onClick={handleResetButtonClick}
             onPointerDown={handleResetButtonPointerDown}
             type="button"
           >
-            Reset
+            <RotateCcw className="h-3.5 w-3.5 shrink-0" strokeWidth={2.1} />
           </button>
         ) : null}
       </div>
@@ -1669,7 +1684,7 @@ function InteractiveMap() {
                 {activeTown.region} ({activeTown.controlCount} {placeNounPlural}
                 )
               </p>
-              <p className="text-[11px] font-medium text-slate-500">
+              <p className="text-[11px] font-medium text-slate-500 mt-0.5">
                 {isBattleMode && activeTown.battleState
                   ? townVisualStates[activeTown.townId]?.isCaptureProtected
                     ? "Captured territory"
