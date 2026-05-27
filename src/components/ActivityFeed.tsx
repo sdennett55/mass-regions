@@ -15,6 +15,7 @@ import type { ActivityEvent } from '../game/types'
 type ActivityFeedProps = {
   events: ActivityEvent[]
   now: number
+  showDismissVeil: boolean
 }
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
@@ -52,7 +53,7 @@ function getActivityDescription(event: ActivityEvent) {
   return `${event.territoryCount} of ${event.territoryTotal} territories`
 }
 
-function ActivityFeed({ events, now }: ActivityFeedProps) {
+function ActivityFeed({ events, now, showDismissVeil }: ActivityFeedProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [lastSeenEventId, setLastSeenEventId] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -91,6 +92,18 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
     event.stopPropagation()
   }
 
+  const handleBackdropPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const handleBackdropClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation()
+    setIsOpen(false)
+  }
+
   useEffect(() => {
     if (!isOpen) {
       return
@@ -121,7 +134,9 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
 
   return (
     <div
-      className="pointer-events-none absolute"
+      className={`pointer-events-none absolute ${
+        isOpen && showDismissVeil ? 'z-20' : ''
+      }`}
       data-ui-control="true"
       style={{
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
@@ -133,6 +148,17 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
         className="pointer-events-auto relative cursor-default select-text"
         data-ui-control="true"
       >
+        {isOpen && showDismissVeil ? (
+          <button
+            aria-label="Close activity"
+            className="fixed inset-0 z-0 cursor-default bg-transparent"
+            data-ui-control="true"
+            onClick={handleBackdropClick}
+            onPointerDown={handleBackdropPointerDown}
+            type="button"
+          />
+        ) : null}
+
         <button
           aria-expanded={isOpen}
           aria-haspopup="dialog"

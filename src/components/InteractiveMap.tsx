@@ -1171,6 +1171,20 @@ function InteractiveMap() {
     setIsSettingsOpen((currentState) => !currentState);
   };
 
+  const handleSettingsBackdropPointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleSettingsBackdropClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+    setIsSettingsOpen(false);
+  };
+
   const handleTownLabelsTogglePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
@@ -1256,6 +1270,7 @@ function InteractiveMap() {
   const isMobileViewport = !!viewport && viewport.width < 640;
   const isCompactHud = !!viewport && viewport.width < COMPACT_HUD_BREAKPOINT_PX;
   const hasTouchInput = isTouchCapableDevice();
+  const showDismissVeil = hasTouchInput;
   const shouldHideSelectedTownPanel = isLegendOpen && isMobileViewport;
   const shouldHideActiveTownTooltip =
     shouldHideSelectedTownPanel || (isBattleMode && hasTouchInput);
@@ -1289,7 +1304,11 @@ function InteractiveMap() {
       ) : null}
 
       {isBattleMode ? (
-        <ActivityFeed events={activityEvents} now={serverNow} />
+        <ActivityFeed
+          events={activityEvents}
+          now={serverNow}
+          showDismissVeil={showDismissVeil}
+        />
       ) : null}
 
       <div
@@ -1299,6 +1318,17 @@ function InteractiveMap() {
           top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
         }}
       >
+        {isSettingsOpen && showDismissVeil ? (
+          <button
+            aria-label="Close settings"
+            className="pointer-events-auto fixed inset-0 cursor-default bg-transparent"
+            data-ui-control="true"
+            onClick={handleSettingsBackdropClick}
+            onPointerDown={handleSettingsBackdropPointerDown}
+            type="button"
+          />
+        ) : null}
+
         <div
           ref={settingsPanelRef}
           className="pointer-events-auto relative cursor-default select-text"
