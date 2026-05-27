@@ -100,7 +100,7 @@ app.get(
   "/api/state",
   stateLimiter,
   (request, response: Response<ServerStateResponse | { error: string }>) => {
-    const { sessionId } = sessionManager.resolveSession(request, response)
+    const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
     const shouldRefillActionPoints =
       !serverConfig.isProduction &&
       (isTruthyQueryParam(request.query.refillActionPoints) ||
@@ -108,12 +108,14 @@ app.get(
 
     if (shouldRefillActionPoints) {
       response.json({
+        sessionToken,
         snapshot: store.refillPlayerActionPoints(sessionId),
       })
       return
     }
 
     response.json({
+      sessionToken,
       snapshot: store.getSnapshot(sessionId),
     })
   },
@@ -130,9 +132,12 @@ app.post(
       return
     }
 
-    const { sessionId } = sessionManager.resolveSession(request, response)
+    const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
     const result = store.applyPlayerAction(sessionId, action)
-    response.status(result.ok ? 200 : 409).json(result)
+    response.status(result.ok ? 200 : 409).json({
+      ...result,
+      sessionToken,
+    })
   },
 )
 

@@ -18,6 +18,8 @@ import type {
 const DEFAULT_DEV_SERVER_URL = "http://localhost:4000";
 const REFILL_ACTION_POINTS_QUERY_PARAM = "refillActionPoints";
 const LEGACY_REFILL_ACTION_POINTS_QUERY_PARAM = "refillInfluence";
+const SESSION_TOKEN_QUERY_PARAM = "sessionToken";
+const SESSION_TOKEN_STORAGE_KEY = "mass-regions:server-session-token";
 
 function trimTrailingSlashes(value: string) {
   return value.replace(/\/+$/, "");
@@ -50,7 +52,36 @@ function buildGameServerUrl(
     }
   }
 
+  const sessionToken = getStoredSessionToken();
+  if (sessionToken) {
+    url.searchParams.set(SESSION_TOKEN_QUERY_PARAM, sessionToken);
+  }
+
   return url;
+}
+
+function getStoredSessionToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.localStorage.getItem(SESSION_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistSessionToken(sessionToken: string | undefined) {
+  if (!sessionToken || typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SESSION_TOKEN_STORAGE_KEY, sessionToken);
+  } catch {
+    // Ignore storage failures so the live session can still continue in-memory.
+  }
 }
 
 function getDevStateRequestSearchParams() {
@@ -107,6 +138,7 @@ export async function fetchServerSnapshot(signal?: AbortSignal) {
   );
 
   const data = await parseJsonResponse<ServerStateResponse>(response);
+  persistSessionToken(data.sessionToken);
   return data.snapshot;
 }
 
@@ -122,7 +154,9 @@ export async function postServerAction(action: PlayerAction) {
     method: "POST",
   });
 
-  return parseJsonResponse<ServerActionResponse>(response);
+  const data = await parseJsonResponse<ServerActionResponse>(response);
+  persistSessionToken(data.sessionToken);
+  return data;
 }
 
 export function openServerEvents() {

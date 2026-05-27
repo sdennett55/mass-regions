@@ -142,6 +142,7 @@ export function useTerritoryGame() {
   const [snapshot, setSnapshot] = useState<ServerGameSnapshot>(() =>
     createInitialServerSnapshot(Date.now()),
   );
+  const [hasLiveSnapshot, setHasLiveSnapshot] = useState(false);
   const [clockAnchor, setClockAnchor] = useState<ServerClockAnchor>(() => {
     const now = Date.now();
     return {
@@ -223,6 +224,7 @@ export function useTerritoryGame() {
 
     clockAnchorRef.current = nextClockAnchor;
     snapshotRef.current = nextSnapshot;
+    setHasLiveSnapshot(true);
     setClockAnchor(nextClockAnchor);
     setSnapshot(nextSnapshot);
     setCaptureVisualServerNow(nextSnapshot.serverTime);
@@ -266,6 +268,10 @@ export function useTerritoryGame() {
   }, [refreshSnapshot]);
 
   useEffect(() => {
+    if (!hasLiveSnapshot) {
+      return;
+    }
+
     const eventSource = openServerEvents();
 
     const handleSnapshot = (event: Event) => {
@@ -309,7 +315,21 @@ export function useTerritoryGame() {
       eventSource.removeEventListener("heartbeat", handleHeartbeat);
       eventSource.close();
     };
-  }, [applySnapshot]);
+  }, [applySnapshot, hasLiveSnapshot]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshSnapshot({ suppressError: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshSnapshot]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -495,6 +515,7 @@ export function useTerritoryGame() {
     controlCounts: snapshot.controlCounts,
     getTownBattleState,
     getTownContext,
+    hasLiveSnapshot,
     legendGroups,
     nextActionPointIn,
     onDefend: (townName: TownName) => {

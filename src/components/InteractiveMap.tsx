@@ -5,8 +5,8 @@ import {
   useEffect,
   useRef,
   useState,
-} from 'react'
-import { ChevronDown, ChevronRight, Settings2, X } from 'lucide-react'
+} from "react";
+import { ChevronDown, ChevronRight, Settings2, X } from "lucide-react";
 
 import {
   formatTownLabel,
@@ -15,134 +15,134 @@ import {
   getRegionForTownId,
   getRegionTownCount,
   getLegendGroups,
-} from '../data/massRegions'
-import { CAPTURE_POINTS_TO_CAPTURE } from '../game/constants'
-import { useTerritoryGame } from '../game/useTerritoryGame'
-import type { TownBattleState } from '../game/types'
-import ActivityFeed from './ActivityFeed'
-import GameHud from './GameHud'
-import MassachusettsMap from './Map'
-import TownBattlePanel from './TownBattlePanel'
+} from "../data/massRegions";
+import { CAPTURE_POINTS_TO_CAPTURE } from "../game/constants";
+import { useTerritoryGame } from "../game/useTerritoryGame";
+import type { TownBattleState } from "../game/types";
+import ActivityFeed from "./ActivityFeed";
+import GameHud from "./GameHud";
+import MassachusettsMap from "./Map";
+import TownBattlePanel from "./TownBattlePanel";
 
-const SVG_WIDTH = 2100
-const SVG_HEIGHT = 1300
-const MIN_ZOOM = 0.7
-const MAX_ZOOM = 12
-const PAN_SAFE_AREA_X = SVG_WIDTH / 2
-const PAN_SAFE_AREA_Y = SVG_HEIGHT / 2
-const WHEEL_COMMIT_DELAY_MS = 90
-const MAP_VIEW_STORAGE_KEY = 'mass-regions:view'
-const MAP_SETTINGS_STORAGE_KEY = 'mass-regions:settings'
-const TOUCH_HOVER_BLOCK_MS = 800
-const RENDER_BUFFER_RATIO = 0.18
-const REGIONS_MODE_QUERY_VALUE = 'regions'
-const COMPACT_HUD_BREAKPOINT_PX = 900
+const SVG_WIDTH = 2100;
+const SVG_HEIGHT = 1300;
+const MIN_ZOOM = 0.7;
+const MAX_ZOOM = 12;
+const PAN_SAFE_AREA_X = SVG_WIDTH / 2;
+const PAN_SAFE_AREA_Y = SVG_HEIGHT / 2;
+const WHEEL_COMMIT_DELAY_MS = 90;
+const MAP_VIEW_STORAGE_KEY = "mass-regions:view";
+const MAP_SETTINGS_STORAGE_KEY = "mass-regions:settings";
+const TOUCH_HOVER_BLOCK_MS = 800;
+const RENDER_BUFFER_RATIO = 0.18;
+const REGIONS_MODE_QUERY_VALUE = "regions";
+const COMPACT_HUD_BREAKPOINT_PX = 900;
 
 type Viewport = {
-  width: number
-  height: number
-}
+  width: number;
+  height: number;
+};
 
 type CameraState = {
-  x: number
-  y: number
-  zoom: number
-}
+  x: number;
+  y: number;
+  zoom: number;
+};
 
 type RenderBox = {
-  height: number
-  width: number
-  x: number
-  y: number
-}
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+};
 
 type LocalPoint = {
-  x: number
-  y: number
-}
+  x: number;
+  y: number;
+};
 
 type ActiveTown = {
-  battleState: TownBattleState | null
-  controlCount: number
-  region: string
-  regionColor: string
-  town: string
-  townId: string
-}
+  battleState: TownBattleState | null;
+  controlCount: number;
+  region: string;
+  regionColor: string;
+  town: string;
+  townId: string;
+};
 
 type PanGesture = {
-  kind: 'pan'
-  moved: boolean
-  pointerType: string
-  pointerId: number
-  startCamera: CameraState
-  startPoint: LocalPoint
-  startTownId: string | null
-}
+  kind: "pan";
+  moved: boolean;
+  pointerType: string;
+  pointerId: number;
+  startCamera: CameraState;
+  startPoint: LocalPoint;
+  startTownId: string | null;
+};
 
 type PinchGesture = {
-  kind: 'pinch'
-  moved: boolean
-  startCamera: CameraState
-  startDistance: number
-  startWorldPoint: LocalPoint
-}
+  kind: "pinch";
+  moved: boolean;
+  startCamera: CameraState;
+  startDistance: number;
+  startWorldPoint: LocalPoint;
+};
 
-type GestureState = PanGesture | PinchGesture | null
+type GestureState = PanGesture | PinchGesture | null;
 
 type StoredMapSettings = {
-  battleMode: boolean
-  showTownLabels: boolean
-}
+  battleMode: boolean;
+  showTownLabels: boolean;
+};
 
 function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
+  return Math.min(max, Math.max(min, value));
 }
 
 function clampInRange(value: number, min: number, max: number) {
-  return min <= max ? clamp(value, min, max) : (min + max) / 2
+  return min <= max ? clamp(value, min, max) : (min + max) / 2;
 }
 
 function midpoint(a: LocalPoint, b: LocalPoint): LocalPoint {
   return {
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,
-  }
+  };
 }
 
 function distance(a: LocalPoint, b: LocalPoint) {
-  return Math.hypot(a.x - b.x, a.y - b.y)
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function getPanMoveThreshold(pointerType: string) {
-  return pointerType === 'touch' ? 8 : 3
+  return pointerType === "touch" ? 8 : 3;
 }
 
 function getVisibleWidth(zoom: number) {
-  return SVG_WIDTH / zoom
+  return SVG_WIDTH / zoom;
 }
 
 function getVisibleHeight(zoom: number, viewport: Viewport) {
-  return getVisibleWidth(zoom) * (viewport.height / viewport.width)
+  return getVisibleWidth(zoom) * (viewport.height / viewport.width);
 }
 
 function getRenderBox(camera: CameraState, viewport: Viewport): RenderBox {
-  const visibleWidth = getVisibleWidth(camera.zoom)
-  const visibleHeight = getVisibleHeight(camera.zoom, viewport)
-  const padWidth = visibleWidth * RENDER_BUFFER_RATIO
-  const padHeight = visibleHeight * RENDER_BUFFER_RATIO
+  const visibleWidth = getVisibleWidth(camera.zoom);
+  const visibleHeight = getVisibleHeight(camera.zoom, viewport);
+  const padWidth = visibleWidth * RENDER_BUFFER_RATIO;
+  const padHeight = visibleHeight * RENDER_BUFFER_RATIO;
 
   return {
     height: visibleHeight + padHeight * 2,
     width: visibleWidth + padWidth * 2,
     x: camera.x - padWidth,
     y: camera.y - padHeight,
-  }
+  };
 }
 
 function getRenderViewBoxString(camera: CameraState, viewport: Viewport) {
-  const renderBox = getRenderBox(camera, viewport)
-  return `${renderBox.x} ${renderBox.y} ${renderBox.width} ${renderBox.height}`
+  const renderBox = getRenderBox(camera, viewport);
+  return `${renderBox.x} ${renderBox.y} ${renderBox.width} ${renderBox.height}`;
 }
 
 function getRenderLayerStyle(viewport: Viewport) {
@@ -151,36 +151,36 @@ function getRenderLayerStyle(viewport: Viewport) {
     left: `${viewport.width * -RENDER_BUFFER_RATIO}px`,
     top: `${viewport.height * -RENDER_BUFFER_RATIO}px`,
     width: `${viewport.width * (1 + RENDER_BUFFER_RATIO * 2)}px`,
-  }
+  };
 }
 
 function clampCamera(camera: CameraState, viewport: Viewport): CameraState {
-  const zoom = clamp(camera.zoom, MIN_ZOOM, MAX_ZOOM)
-  const visibleWidth = getVisibleWidth(zoom)
-  const visibleHeight = getVisibleHeight(zoom, viewport)
+  const zoom = clamp(camera.zoom, MIN_ZOOM, MAX_ZOOM);
+  const visibleWidth = getVisibleWidth(zoom);
+  const visibleHeight = getVisibleHeight(zoom, viewport);
 
   const x = clampInRange(
     camera.x,
     -PAN_SAFE_AREA_X,
     SVG_WIDTH + PAN_SAFE_AREA_X - visibleWidth,
-  )
+  );
 
   const y = clampInRange(
     camera.y,
     -PAN_SAFE_AREA_Y,
     SVG_HEIGHT + PAN_SAFE_AREA_Y - visibleHeight,
-  )
+  );
 
-  return { x, y, zoom }
+  return { x, y, zoom };
 }
 
 function getFitCamera(viewport: Viewport): CameraState {
   const fitZoom = Math.min(
     1,
     (SVG_WIDTH * viewport.height) / (SVG_HEIGHT * viewport.width),
-  )
-  const visibleWidth = getVisibleWidth(fitZoom)
-  const visibleHeight = getVisibleHeight(fitZoom, viewport)
+  );
+  const visibleWidth = getVisibleWidth(fitZoom);
+  const visibleHeight = getVisibleHeight(fitZoom, viewport);
 
   return clampCamera(
     {
@@ -189,7 +189,7 @@ function getFitCamera(viewport: Viewport): CameraState {
       y: (SVG_HEIGHT - visibleHeight) / 2,
     },
     viewport,
-  )
+  );
 }
 
 function areCamerasEqual(a: CameraState, b: CameraState) {
@@ -197,129 +197,133 @@ function areCamerasEqual(a: CameraState, b: CameraState) {
     Math.abs(a.x - b.x) < 0.01 &&
     Math.abs(a.y - b.y) < 0.01 &&
     Math.abs(a.zoom - b.zoom) < 0.0001
-  )
+  );
 }
 
 function loadStoredCamera() {
-  if (typeof window === 'undefined') {
-    return null
+  if (typeof window === "undefined") {
+    return null;
   }
 
   try {
-    const rawCamera = window.sessionStorage.getItem(MAP_VIEW_STORAGE_KEY)
+    const rawCamera = window.sessionStorage.getItem(MAP_VIEW_STORAGE_KEY);
     if (!rawCamera) {
-      return null
+      return null;
     }
 
-    const parsedCamera = JSON.parse(rawCamera) as Partial<CameraState>
+    const parsedCamera = JSON.parse(rawCamera) as Partial<CameraState>;
     if (
-      typeof parsedCamera.x !== 'number' ||
-      typeof parsedCamera.y !== 'number' ||
-      typeof parsedCamera.zoom !== 'number'
+      typeof parsedCamera.x !== "number" ||
+      typeof parsedCamera.y !== "number" ||
+      typeof parsedCamera.zoom !== "number"
     ) {
-      return null
+      return null;
     }
 
     return {
       x: parsedCamera.x,
       y: parsedCamera.y,
       zoom: parsedCamera.zoom,
-    }
+    };
   } catch {
-    return null
+    return null;
   }
 }
 
 function saveStoredCamera(camera: CameraState) {
-  if (typeof window === 'undefined') {
-    return
+  if (typeof window === "undefined") {
+    return;
   }
 
   try {
-    window.sessionStorage.setItem(MAP_VIEW_STORAGE_KEY, JSON.stringify(camera))
+    window.sessionStorage.setItem(MAP_VIEW_STORAGE_KEY, JSON.stringify(camera));
   } catch {
     // Ignore storage failures so interaction keeps working in private/locked-down contexts.
   }
 }
 
 function loadStoredMapSettings(): StoredMapSettings | null {
-  if (typeof window === 'undefined') {
-    return null
+  if (typeof window === "undefined") {
+    return null;
   }
 
   try {
-    const rawSettings = window.sessionStorage.getItem(MAP_SETTINGS_STORAGE_KEY)
+    const rawSettings = window.sessionStorage.getItem(MAP_SETTINGS_STORAGE_KEY);
     if (!rawSettings) {
-      return null
+      return null;
     }
 
-    const parsedSettings = JSON.parse(rawSettings) as Partial<StoredMapSettings>
-    if (typeof parsedSettings.showTownLabels !== 'boolean') {
-      return null
+    const parsedSettings = JSON.parse(
+      rawSettings,
+    ) as Partial<StoredMapSettings>;
+    if (typeof parsedSettings.showTownLabels !== "boolean") {
+      return null;
     }
 
     return {
       battleMode:
-        typeof parsedSettings.battleMode === 'boolean'
+        typeof parsedSettings.battleMode === "boolean"
           ? parsedSettings.battleMode
           : true,
       showTownLabels: parsedSettings.showTownLabels,
-    }
+    };
   } catch {
-    return null
+    return null;
   }
 }
 
 function getBattleModeOverrideFromUrl() {
-  if (typeof window === 'undefined') {
-    return null
+  if (typeof window === "undefined") {
+    return null;
   }
 
   try {
-    const modeParam = new URLSearchParams(window.location.search).get('mode')
+    const modeParam = new URLSearchParams(window.location.search).get("mode");
     if (!modeParam) {
-      return null
+      return null;
     }
 
-    return modeParam.trim().toLowerCase() === REGIONS_MODE_QUERY_VALUE ? false : null
+    return modeParam.trim().toLowerCase() === REGIONS_MODE_QUERY_VALUE
+      ? false
+      : null;
   } catch {
-    return null
+    return null;
   }
 }
 
 function loadInitialMapSettings() {
-  const storedSettings = loadStoredMapSettings()
-  const battleModeOverride = getBattleModeOverrideFromUrl()
+  const storedSettings = loadStoredMapSettings();
+  const battleModeOverride = getBattleModeOverrideFromUrl();
 
   if (battleModeOverride === null) {
-    return storedSettings
+    return storedSettings;
   }
 
   return {
     battleMode: battleModeOverride,
     showTownLabels: storedSettings?.showTownLabels ?? true,
-  }
+  };
 }
 
 function syncBattleModeUrl(isBattleMode: boolean) {
-  if (typeof window === 'undefined') {
-    return
+  if (typeof window === "undefined") {
+    return;
   }
 
   try {
-    const url = new URL(window.location.href)
+    const url = new URL(window.location.href);
 
     if (isBattleMode) {
-      url.searchParams.delete('mode')
+      url.searchParams.delete("mode");
     } else {
-      url.searchParams.set('mode', REGIONS_MODE_QUERY_VALUE)
+      url.searchParams.set("mode", REGIONS_MODE_QUERY_VALUE);
     }
 
-    const nextUrl = `${url.pathname}${url.search}${url.hash}`
-    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
     if (nextUrl !== currentUrl) {
-      window.history.replaceState(window.history.state, '', nextUrl)
+      window.history.replaceState(window.history.state, "", nextUrl);
     }
   } catch {
     // Ignore URL write failures so the map can keep working in restricted contexts.
@@ -327,17 +331,32 @@ function syncBattleModeUrl(isBattleMode: boolean) {
 }
 
 function saveStoredMapSettings(settings: StoredMapSettings) {
-  if (typeof window === 'undefined') {
-    return
+  if (typeof window === "undefined") {
+    return;
   }
 
   try {
     window.sessionStorage.setItem(
       MAP_SETTINGS_STORAGE_KEY,
       JSON.stringify(settings),
-    )
+    );
   } catch {
     // Ignore storage failures so interaction keeps working in private/locked-down contexts.
+  }
+}
+
+function isTouchCapableDevice() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return (
+      window.navigator.maxTouchPoints > 0 ||
+      window.matchMedia("(pointer: coarse)").matches
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -346,57 +365,59 @@ function getPreviewMatrix(
   previewCamera: CameraState,
   viewport: Viewport,
 ) {
-  const committedRenderBox = getRenderBox(committedCamera, viewport)
-  const previewRenderBox = getRenderBox(previewCamera, viewport)
-  const renderWidth = viewport.width * (1 + RENDER_BUFFER_RATIO * 2)
-  const renderHeight = viewport.height * (1 + RENDER_BUFFER_RATIO * 2)
+  const committedRenderBox = getRenderBox(committedCamera, viewport);
+  const previewRenderBox = getRenderBox(previewCamera, viewport);
+  const renderWidth = viewport.width * (1 + RENDER_BUFFER_RATIO * 2);
+  const renderHeight = viewport.height * (1 + RENDER_BUFFER_RATIO * 2);
 
-  const scaleX = committedRenderBox.width / previewRenderBox.width
-  const scaleY = committedRenderBox.height / previewRenderBox.height
+  const scaleX = committedRenderBox.width / previewRenderBox.width;
+  const scaleY = committedRenderBox.height / previewRenderBox.height;
   const translateX =
     ((committedRenderBox.x - previewRenderBox.x) / previewRenderBox.width) *
-    renderWidth
+    renderWidth;
   const translateY =
     ((committedRenderBox.y - previewRenderBox.y) / previewRenderBox.height) *
-    renderHeight
+    renderHeight;
 
   return {
     scaleX,
     scaleY,
     translateX,
     translateY,
-  }
+  };
 }
 
 function InteractiveMap() {
-  const initialSettings = loadInitialMapSettings()
-  const viewportRef = useRef<HTMLDivElement | null>(null)
-  const mapLayerRef = useRef<HTMLDivElement | null>(null)
-  const settingsPanelRef = useRef<HTMLDivElement | null>(null)
-  const hasResolvedInitialCameraRef = useRef(false)
-  const pointersRef = useRef(new globalThis.Map<number, LocalPoint>())
-  const gestureRef = useRef<GestureState>(null)
-  const wheelCommitTimerRef = useRef<number | null>(null)
-  const previewFrameRef = useRef<number | null>(null)
-  const pendingPreviewCameraRef = useRef<CameraState | null>(null)
-  const committedCameraRef = useRef<CameraState | null>(null)
-  const previewCameraRef = useRef<CameraState | null>(null)
-  const lastTouchInteractionTimeRef = useRef(0)
+  const initialSettings = loadInitialMapSettings();
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const mapLayerRef = useRef<HTMLDivElement | null>(null);
+  const settingsPanelRef = useRef<HTMLDivElement | null>(null);
+  const hasResolvedInitialCameraRef = useRef(false);
+  const pointersRef = useRef(new globalThis.Map<number, LocalPoint>());
+  const gestureRef = useRef<GestureState>(null);
+  const wheelCommitTimerRef = useRef<number | null>(null);
+  const previewFrameRef = useRef<number | null>(null);
+  const pendingPreviewCameraRef = useRef<CameraState | null>(null);
+  const committedCameraRef = useRef<CameraState | null>(null);
+  const previewCameraRef = useRef<CameraState | null>(null);
+  const lastTouchInteractionTimeRef = useRef(0);
 
-  const [viewport, setViewport] = useState<Viewport | null>(null)
-  const [camera, setCamera] = useState<CameraState | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [isLegendOpen, setIsLegendOpen] = useState(false)
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
-  const [expandedLegendRegions, setExpandedLegendRegions] = useState<string[]>([])
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const [camera, setCamera] = useState<CameraState | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isLegendOpen, setIsLegendOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [expandedLegendRegions, setExpandedLegendRegions] = useState<string[]>(
+    [],
+  );
   const [showTownLabels, setShowTownLabels] = useState(
     initialSettings?.showTownLabels ?? true,
-  )
+  );
   const [isBattleMode, setIsBattleMode] = useState(
     initialSettings?.battleMode ?? true,
-  )
-  const [hoveredTownId, setHoveredTownId] = useState<string | null>(null)
-  const [selectedTownId, setSelectedTownId] = useState<string | null>(null)
+  );
+  const [hoveredTownId, setHoveredTownId] = useState<string | null>(null);
+  const [selectedTownId, setSelectedTownId] = useState<string | null>(null);
   const {
     actionPoints,
     activityEvents,
@@ -404,6 +425,7 @@ function InteractiveMap() {
     contestedTownCount,
     controlCounts,
     getTownContext,
+    hasLiveSnapshot,
     legendGroups,
     nextActionPointIn,
     onDefend,
@@ -414,309 +436,327 @@ function InteractiveMap() {
     seasonTimeRemaining,
     statusMessage,
     townVisualStates,
-  } = useTerritoryGame()
-  const placeNounPlural = isBattleMode ? 'territories' : 'municipalities'
+  } = useTerritoryGame();
+  const placeNounPlural = isBattleMode ? "territories" : "municipalities";
   const labelsSettingLabel = isBattleMode
-    ? 'Territory names'
-    : 'Municipality names'
-  const legendDescription = `Browse all regions and ${placeNounPlural}`
-  const mapAriaLabel = `Map of Massachusetts ${placeNounPlural} colored by region`
+    ? "Territory names"
+    : "Municipality names";
+  const legendDescription = `Browse all regions and ${placeNounPlural}`;
+  const mapAriaLabel = `Map of Massachusetts ${placeNounPlural} colored by region`;
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
-      window.clearTimeout(wheelCommitTimerRef.current)
-      wheelCommitTimerRef.current = null
+      window.clearTimeout(wheelCommitTimerRef.current);
+      wheelCommitTimerRef.current = null;
     }
-  }
+  };
 
   const cancelPreviewFrame = () => {
     if (previewFrameRef.current !== null) {
-      window.cancelAnimationFrame(previewFrameRef.current)
-      previewFrameRef.current = null
+      window.cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
     }
-  }
+  };
 
   const updateHoveredTownId = (nextTownId: string | null) => {
     setHoveredTownId((currentTownId) =>
       currentTownId === nextTownId ? currentTownId : nextTownId,
-    )
-  }
+    );
+  };
 
   const updateSelectedTownId = (nextTownId: string | null) => {
     setSelectedTownId((currentTownId) =>
       currentTownId === nextTownId ? currentTownId : nextTownId,
-    )
-  }
+    );
+  };
 
   const markTouchInteraction = () => {
-    lastTouchInteractionTimeRef.current = Date.now()
-  }
+    lastTouchInteractionTimeRef.current = Date.now();
+  };
 
   const shouldIgnoreHover = (pointerType: string) =>
-    pointerType !== 'mouse' ||
+    pointerType !== "mouse" ||
     !!gestureRef.current ||
     pointersRef.current.size > 0 ||
-    Date.now() - lastTouchInteractionTimeRef.current < TOUCH_HOVER_BLOCK_MS
+    Date.now() - lastTouchInteractionTimeRef.current < TOUCH_HOVER_BLOCK_MS;
 
   const setMapHitTestingEnabled = (enabled: boolean) => {
     if (!mapLayerRef.current) {
-      return
+      return;
     }
 
-    mapLayerRef.current.style.pointerEvents = enabled ? '' : 'none'
-  }
+    mapLayerRef.current.style.pointerEvents = enabled ? "" : "none";
+  };
 
   const clearPreviewTransform = () => {
     if (!mapLayerRef.current) {
-      return
+      return;
     }
 
-    mapLayerRef.current.style.transform = ''
-    mapLayerRef.current.style.transformOrigin = ''
-    mapLayerRef.current.style.willChange = ''
-  }
+    mapLayerRef.current.style.transform = "";
+    mapLayerRef.current.style.transformOrigin = "";
+    mapLayerRef.current.style.willChange = "";
+  };
 
-  const getLocalPoint = (clientX: number, clientY: number): LocalPoint | null => {
-    const bounds = viewportRef.current?.getBoundingClientRect()
+  const getLocalPoint = (
+    clientX: number,
+    clientY: number,
+  ): LocalPoint | null => {
+    const bounds = viewportRef.current?.getBoundingClientRect();
     if (!bounds) {
-      return null
+      return null;
     }
 
     return {
       x: clientX - bounds.left,
       y: clientY - bounds.top,
-    }
-  }
+    };
+  };
 
   const getDisplayedCamera = () =>
-    previewCameraRef.current ?? committedCameraRef.current
+    previewCameraRef.current ?? committedCameraRef.current;
 
-  const getTownById = (rawTownId: string, battleModeEnabled: boolean): ActiveTown | null => {
-    const canonicalTownId = getCanonicalTownId(rawTownId)
-    const battleState = season.towns[canonicalTownId]
-    const baselineRegion = getRegionForTownId(canonicalTownId)
+  const getTownById = (
+    rawTownId: string,
+    battleModeEnabled: boolean,
+  ): ActiveTown | null => {
+    const canonicalTownId = getCanonicalTownId(rawTownId);
+    const battleState = season.towns[canonicalTownId];
+    const baselineRegion = getRegionForTownId(canonicalTownId);
 
     if (!battleState || !baselineRegion) {
-      return null
+      return null;
     }
 
-    const region = battleModeEnabled ? battleState.currentRegion : baselineRegion
+    const region = battleModeEnabled
+      ? battleState.currentRegion
+      : baselineRegion;
 
     return {
       battleState: battleModeEnabled ? battleState : null,
       controlCount: battleModeEnabled
-        ? controlCounts[battleState.currentRegion] ?? 0
+        ? (controlCounts[battleState.currentRegion] ?? 0)
         : getRegionTownCount(region),
       region,
       regionColor: getRegionColor(region),
       town: formatTownLabel(canonicalTownId),
       townId: canonicalTownId,
-    }
-  }
+    };
+  };
 
-  const getTownIdFromEventTarget = (target: EventTarget | null): string | null => {
+  const getTownIdFromEventTarget = (
+    target: EventTarget | null,
+  ): string | null => {
     if (!(target instanceof Element)) {
-      return null
+      return null;
     }
 
-    const townPath = target.closest('path[id]')
+    const townPath = target.closest("path[id]");
     if (!townPath) {
-      return null
+      return null;
     }
 
-    return getCanonicalTownId(townPath.id)
-  }
+    return getCanonicalTownId(townPath.id);
+  };
 
   const getTownIdAtClientPoint = (clientX: number, clientY: number) => {
-    if (typeof document === 'undefined') {
-      return null
+    if (typeof document === "undefined") {
+      return null;
     }
 
-    return getTownIdFromEventTarget(document.elementFromPoint(clientX, clientY))
-  }
+    return getTownIdFromEventTarget(
+      document.elementFromPoint(clientX, clientY),
+    );
+  };
 
   const writePreviewCamera = (nextCamera: CameraState) => {
     if (!viewport || !mapLayerRef.current || !committedCameraRef.current) {
-      return
+      return;
     }
 
     if (areCamerasEqual(committedCameraRef.current, nextCamera)) {
-      clearPreviewTransform()
-      return
+      clearPreviewTransform();
+      return;
     }
 
     const { scaleX, scaleY, translateX, translateY } = getPreviewMatrix(
       committedCameraRef.current,
       nextCamera,
       viewport,
-    )
+    );
 
-    mapLayerRef.current.style.willChange = 'transform'
-    mapLayerRef.current.style.transformOrigin = '0 0'
-    mapLayerRef.current.style.transform = `matrix(${scaleX}, 0, 0, ${scaleY}, ${translateX}, ${translateY})`
-  }
+    mapLayerRef.current.style.willChange = "transform";
+    mapLayerRef.current.style.transformOrigin = "0 0";
+    mapLayerRef.current.style.transform = `matrix(${scaleX}, 0, 0, ${scaleY}, ${translateX}, ${translateY})`;
+  };
 
   const schedulePreviewCamera = (nextCamera: CameraState) => {
-    previewCameraRef.current = nextCamera
-    pendingPreviewCameraRef.current = nextCamera
+    previewCameraRef.current = nextCamera;
+    pendingPreviewCameraRef.current = nextCamera;
 
     if (previewFrameRef.current !== null) {
-      return
+      return;
     }
 
     previewFrameRef.current = window.requestAnimationFrame(() => {
-      previewFrameRef.current = null
+      previewFrameRef.current = null;
 
-      const pendingCamera = pendingPreviewCameraRef.current
+      const pendingCamera = pendingPreviewCameraRef.current;
       if (!pendingCamera) {
-        clearPreviewTransform()
-        return
+        clearPreviewTransform();
+        return;
       }
 
-      writePreviewCamera(pendingCamera)
-    })
-  }
+      writePreviewCamera(pendingCamera);
+    });
+  };
 
   const commitPreviewCamera = (nextCamera?: CameraState | null) => {
     if (!viewport) {
-      return
+      return;
     }
 
-    clearWheelCommitTimer()
-    cancelPreviewFrame()
+    clearWheelCommitTimer();
+    cancelPreviewFrame();
 
     const cameraToCommit =
-      nextCamera ?? pendingPreviewCameraRef.current ?? previewCameraRef.current
+      nextCamera ?? pendingPreviewCameraRef.current ?? previewCameraRef.current;
     if (!cameraToCommit) {
-      setMapHitTestingEnabled(true)
-      return
+      setMapHitTestingEnabled(true);
+      return;
     }
 
-    const clampedCamera = clampCamera(cameraToCommit, viewport)
-    const svgElement = mapLayerRef.current?.querySelector('svg')
+    const clampedCamera = clampCamera(cameraToCommit, viewport);
+    const svgElement = mapLayerRef.current?.querySelector("svg");
 
     if (svgElement) {
-      svgElement.setAttribute('viewBox', getRenderViewBoxString(clampedCamera, viewport))
+      svgElement.setAttribute(
+        "viewBox",
+        getRenderViewBoxString(clampedCamera, viewport),
+      );
     }
 
-    saveStoredCamera(clampedCamera)
-    committedCameraRef.current = clampedCamera
-    previewCameraRef.current = clampedCamera
-    pendingPreviewCameraRef.current = null
-    clearPreviewTransform()
-    setMapHitTestingEnabled(true)
+    saveStoredCamera(clampedCamera);
+    committedCameraRef.current = clampedCamera;
+    previewCameraRef.current = clampedCamera;
+    pendingPreviewCameraRef.current = null;
+    clearPreviewTransform();
+    setMapHitTestingEnabled(true);
     setCamera((currentCamera) =>
       currentCamera && areCamerasEqual(currentCamera, clampedCamera)
         ? currentCamera
         : clampedCamera,
-    )
-  }
+    );
+  };
 
   const resetView = () => {
     if (!viewport) {
-      return
+      return;
     }
 
-    pointersRef.current.clear()
-    gestureRef.current = null
-    setIsDragging(false)
-    setIsSettingsOpen(false)
-    updateHoveredTownId(null)
-    updateSelectedTownId(null)
-    commitPreviewCamera(getFitCamera(viewport))
-  }
+    pointersRef.current.clear();
+    gestureRef.current = null;
+    setIsDragging(false);
+    setIsSettingsOpen(false);
+    updateHoveredTownId(null);
+    updateSelectedTownId(null);
+    commitPreviewCamera(getFitCamera(viewport));
+  };
 
   useEffect(() => {
     if (!isSettingsOpen) {
-      return
+      return;
     }
 
     const handleWindowPointerDown = (event: PointerEvent) => {
       if (settingsPanelRef.current?.contains(event.target as Node)) {
-        return
+        return;
       }
 
-      setIsSettingsOpen(false)
-    }
+      setIsSettingsOpen(false);
+    };
 
     const handleWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsSettingsOpen(false)
+      if (event.key === "Escape") {
+        setIsSettingsOpen(false);
       }
-    }
+    };
 
-    window.addEventListener('pointerdown', handleWindowPointerDown)
-    window.addEventListener('keydown', handleWindowKeyDown)
+    window.addEventListener("pointerdown", handleWindowPointerDown);
+    window.addEventListener("keydown", handleWindowKeyDown);
 
     return () => {
-      window.removeEventListener('pointerdown', handleWindowPointerDown)
-      window.removeEventListener('keydown', handleWindowKeyDown)
-    }
-  }, [isSettingsOpen])
+      window.removeEventListener("pointerdown", handleWindowPointerDown);
+      window.removeEventListener("keydown", handleWindowKeyDown);
+    };
+  }, [isSettingsOpen]);
 
   useEffect(() => {
     saveStoredMapSettings({
       battleMode: isBattleMode,
       showTownLabels,
-    })
-  }, [isBattleMode, showTownLabels])
+    });
+  }, [isBattleMode, showTownLabels]);
 
   useEffect(() => {
-    syncBattleModeUrl(isBattleMode)
-  }, [isBattleMode])
+    syncBattleModeUrl(isBattleMode);
+  }, [isBattleMode]);
 
   useEffect(() => {
-    const element = viewportRef.current
+    const element = viewportRef.current;
     if (!element) {
-      return
+      return;
     }
 
     const observer = new ResizeObserver(([entry]) => {
       const nextViewport = {
         width: entry.contentRect.width,
         height: entry.contentRect.height,
-      }
+      };
 
-      setViewport(nextViewport)
+      setViewport(nextViewport);
 
-      const isInitialViewport = !hasResolvedInitialCameraRef.current
-      const basisCamera = getDisplayedCamera()
-      const restoredCamera = isInitialViewport ? loadStoredCamera() : null
+      const isInitialViewport = !hasResolvedInitialCameraRef.current;
+      const basisCamera = getDisplayedCamera();
+      const restoredCamera = isInitialViewport ? loadStoredCamera() : null;
       const nextCamera = basisCamera
         ? clampCamera(basisCamera, nextViewport)
         : restoredCamera
           ? clampCamera(restoredCamera, nextViewport)
-          : getFitCamera(nextViewport)
+          : getFitCamera(nextViewport);
 
-      cancelPreviewFrame()
-      hasResolvedInitialCameraRef.current = true
-      saveStoredCamera(nextCamera)
-      committedCameraRef.current = nextCamera
-      previewCameraRef.current = nextCamera
-      pendingPreviewCameraRef.current = null
-      clearPreviewTransform()
-      setMapHitTestingEnabled(true)
+      cancelPreviewFrame();
+      hasResolvedInitialCameraRef.current = true;
+      saveStoredCamera(nextCamera);
+      committedCameraRef.current = nextCamera;
+      previewCameraRef.current = nextCamera;
+      pendingPreviewCameraRef.current = null;
+      clearPreviewTransform();
+      setMapHitTestingEnabled(true);
 
-      const svgElement = mapLayerRef.current?.querySelector('svg')
+      const svgElement = mapLayerRef.current?.querySelector("svg");
       if (svgElement) {
-        svgElement.setAttribute('viewBox', getRenderViewBoxString(nextCamera, nextViewport))
+        svgElement.setAttribute(
+          "viewBox",
+          getRenderViewBoxString(nextCamera, nextViewport),
+        );
       }
 
       setCamera((currentCamera) =>
         currentCamera && areCamerasEqual(currentCamera, nextCamera)
           ? currentCamera
           : nextCamera,
-      )
-    })
+      );
+    });
 
-    observer.observe(element)
+    observer.observe(element);
 
     return () => {
-      observer.disconnect()
-      clearWheelCommitTimer()
-      cancelPreviewFrame()
-    }
-  }, [])
+      observer.disconnect();
+      clearWheelCommitTimer();
+      cancelPreviewFrame();
+    };
+  }, []);
 
   const beginPanGesture = (
     pointerId: number,
@@ -724,66 +764,69 @@ function InteractiveMap() {
     startPoint: LocalPoint,
     startTownId: string | null,
   ) => {
-    const startCamera = getDisplayedCamera()
+    const startCamera = getDisplayedCamera();
     if (!startCamera) {
-      return
+      return;
     }
 
     gestureRef.current = {
-      kind: 'pan',
+      kind: "pan",
       moved: false,
       pointerType,
       pointerId,
       startCamera,
       startPoint,
       startTownId,
-    }
+    };
 
-    setIsDragging(true)
-  }
+    setIsDragging(true);
+  };
 
   const continuePanGesture = (pointerId: number, startPoint: LocalPoint) => {
-    const startCamera = getDisplayedCamera()
+    const startCamera = getDisplayedCamera();
     if (!startCamera) {
-      return
+      return;
     }
 
     gestureRef.current = {
-      kind: 'pan',
+      kind: "pan",
       moved: true,
-      pointerType: 'touch',
+      pointerType: "touch",
       pointerId,
       startCamera,
       startPoint,
       startTownId: null,
-    }
+    };
 
-    setMapHitTestingEnabled(false)
-    setIsDragging(true)
-  }
+    setMapHitTestingEnabled(false);
+    setIsDragging(true);
+  };
 
   const beginPinchGesture = () => {
     if (!viewport) {
-      return
+      return;
     }
 
-    const startCamera = getDisplayedCamera()
+    const startCamera = getDisplayedCamera();
     if (!startCamera) {
-      return
+      return;
     }
 
-    const pointerEntries = Array.from(pointersRef.current.values())
+    const pointerEntries = Array.from(pointersRef.current.values());
     if (pointerEntries.length < 2) {
-      return
+      return;
     }
 
-    const startCenter = midpoint(pointerEntries[0], pointerEntries[1])
-    const startDistance = Math.max(distance(pointerEntries[0], pointerEntries[1]), 1)
-    const visibleWidth = getVisibleWidth(startCamera.zoom)
-    const visibleHeight = getVisibleHeight(startCamera.zoom, viewport)
+    const startCenter = midpoint(pointerEntries[0], pointerEntries[1]);
+    const startDistance = Math.max(
+      distance(pointerEntries[0], pointerEntries[1]),
+      1,
+    );
+    const visibleWidth = getVisibleWidth(startCamera.zoom);
+    const visibleHeight = getVisibleHeight(startCamera.zoom, viewport);
 
     gestureRef.current = {
-      kind: 'pinch',
+      kind: "pinch",
       moved: true,
       startCamera,
       startDistance,
@@ -791,38 +834,40 @@ function InteractiveMap() {
         x: startCamera.x + (startCenter.x / viewport.width) * visibleWidth,
         y: startCamera.y + (startCenter.y / viewport.height) * visibleHeight,
       },
-    }
+    };
 
-    setMapHitTestingEnabled(false)
-    updateHoveredTownId(null)
-    setIsDragging(true)
-  }
+    setMapHitTestingEnabled(false);
+    updateHoveredTownId(null);
+    setIsDragging(true);
+  };
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if ((event.target as Element | null)?.closest('[data-ui-control="true"]')) {
-      return
+      return;
     }
 
     if (!viewport) {
-      return
+      return;
     }
 
-    const pointer = getLocalPoint(event.clientX, event.clientY)
-    const currentCamera = getDisplayedCamera()
+    const pointer = getLocalPoint(event.clientX, event.clientY);
+    const currentCamera = getDisplayedCamera();
     if (!pointer || !currentCamera) {
-      return
+      return;
     }
 
-    event.preventDefault()
+    event.preventDefault();
 
-    const zoomFactor = Math.exp(-event.deltaY * 0.0015)
-    const visibleWidth = getVisibleWidth(currentCamera.zoom)
-    const visibleHeight = getVisibleHeight(currentCamera.zoom, viewport)
-    const worldX = currentCamera.x + (pointer.x / viewport.width) * visibleWidth
-    const worldY = currentCamera.y + (pointer.y / viewport.height) * visibleHeight
-    const nextZoom = clamp(currentCamera.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM)
-    const nextVisibleWidth = getVisibleWidth(nextZoom)
-    const nextVisibleHeight = getVisibleHeight(nextZoom, viewport)
+    const zoomFactor = Math.exp(-event.deltaY * 0.0015);
+    const visibleWidth = getVisibleWidth(currentCamera.zoom);
+    const visibleHeight = getVisibleHeight(currentCamera.zoom, viewport);
+    const worldX =
+      currentCamera.x + (pointer.x / viewport.width) * visibleWidth;
+    const worldY =
+      currentCamera.y + (pointer.y / viewport.height) * visibleHeight;
+    const nextZoom = clamp(currentCamera.zoom * zoomFactor, MIN_ZOOM, MAX_ZOOM);
+    const nextVisibleWidth = getVisibleWidth(nextZoom);
+    const nextVisibleHeight = getVisibleHeight(nextZoom, viewport);
 
     const nextCamera = clampCamera(
       {
@@ -831,39 +876,39 @@ function InteractiveMap() {
         y: worldY - (pointer.y / viewport.height) * nextVisibleHeight,
       },
       viewport,
-    )
+    );
 
-    setMapHitTestingEnabled(false)
-    schedulePreviewCamera(nextCamera)
-    clearWheelCommitTimer()
+    setMapHitTestingEnabled(false);
+    schedulePreviewCamera(nextCamera);
+    clearWheelCommitTimer();
     wheelCommitTimerRef.current = window.setTimeout(() => {
-      commitPreviewCamera(previewCameraRef.current)
-    }, WHEEL_COMMIT_DELAY_MS)
-  }
+      commitPreviewCamera(previewCameraRef.current);
+    }, WHEEL_COMMIT_DELAY_MS);
+  };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if ((event.target as Element | null)?.closest('[data-ui-control="true"]')) {
-      return
+      return;
     }
 
-    if (event.button !== 0 && event.pointerType !== 'touch') {
-      return
+    if (event.button !== 0 && event.pointerType !== "touch") {
+      return;
     }
 
-    clearWheelCommitTimer()
+    clearWheelCommitTimer();
 
-    if (event.pointerType === 'touch') {
-      markTouchInteraction()
-      updateHoveredTownId(null)
+    if (event.pointerType === "touch") {
+      markTouchInteraction();
+      updateHoveredTownId(null);
     }
 
-    const point = getLocalPoint(event.clientX, event.clientY)
+    const point = getLocalPoint(event.clientX, event.clientY);
     if (!point) {
-      return
+      return;
     }
 
-    pointersRef.current.set(event.pointerId, point)
-    event.currentTarget.setPointerCapture(event.pointerId)
+    pointersRef.current.set(event.pointerId, point);
+    event.currentTarget.setPointerCapture(event.pointerId);
 
     if (pointersRef.current.size === 1) {
       beginPanGesture(
@@ -871,44 +916,44 @@ function InteractiveMap() {
         event.pointerType,
         point,
         getTownIdFromEventTarget(event.target),
-      )
-      return
+      );
+      return;
     }
 
     if (pointersRef.current.size === 2) {
-      beginPinchGesture()
+      beginPinchGesture();
     }
-  }
+  };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const point = getLocalPoint(event.clientX, event.clientY)
+    const point = getLocalPoint(event.clientX, event.clientY);
     if (!point || !pointersRef.current.has(event.pointerId)) {
-      return
+      return;
     }
 
-    pointersRef.current.set(event.pointerId, point)
+    pointersRef.current.set(event.pointerId, point);
 
     if (!viewport || !gestureRef.current) {
-      return
+      return;
     }
 
-    if (gestureRef.current.kind === 'pan') {
+    if (gestureRef.current.kind === "pan") {
       if (gestureRef.current.pointerId !== event.pointerId) {
-        return
+        return;
       }
 
-      const deltaX = point.x - gestureRef.current.startPoint.x
-      const deltaY = point.y - gestureRef.current.startPoint.y
-      const wasMoved = gestureRef.current.moved
+      const deltaX = point.x - gestureRef.current.startPoint.x;
+      const deltaY = point.y - gestureRef.current.startPoint.y;
+      const wasMoved = gestureRef.current.moved;
       const moved =
         wasMoved ||
         Math.hypot(deltaX, deltaY) >
-          getPanMoveThreshold(gestureRef.current.pointerType)
-      const visibleWidth = getVisibleWidth(gestureRef.current.startCamera.zoom)
+          getPanMoveThreshold(gestureRef.current.pointerType);
+      const visibleWidth = getVisibleWidth(gestureRef.current.startCamera.zoom);
       const visibleHeight = getVisibleHeight(
         gestureRef.current.startCamera.zoom,
         viewport,
-      )
+      );
 
       const nextCamera = clampCamera(
         {
@@ -921,41 +966,41 @@ function InteractiveMap() {
             (deltaY / viewport.height) * visibleHeight,
         },
         viewport,
-      )
+      );
 
       gestureRef.current = {
         ...gestureRef.current,
         moved,
-      }
+      };
 
       if (moved && !wasMoved) {
-        setMapHitTestingEnabled(false)
-        updateHoveredTownId(null)
+        setMapHitTestingEnabled(false);
+        updateHoveredTownId(null);
       }
 
-      schedulePreviewCamera(nextCamera)
-      return
+      schedulePreviewCamera(nextCamera);
+      return;
     }
 
-    if (gestureRef.current.kind === 'pinch' && pointersRef.current.size >= 2) {
-      const pointerEntries = Array.from(pointersRef.current.values())
+    if (gestureRef.current.kind === "pinch" && pointersRef.current.size >= 2) {
+      const pointerEntries = Array.from(pointersRef.current.values());
       if (pointerEntries.length < 2) {
-        return
+        return;
       }
 
-      const center = midpoint(pointerEntries[0], pointerEntries[1])
+      const center = midpoint(pointerEntries[0], pointerEntries[1]);
       const currentDistance = Math.max(
         distance(pointerEntries[0], pointerEntries[1]),
         1,
-      )
+      );
       const nextZoom = clamp(
         gestureRef.current.startCamera.zoom *
           (currentDistance / gestureRef.current.startDistance),
         MIN_ZOOM,
         MAX_ZOOM,
-      )
-      const nextVisibleWidth = getVisibleWidth(nextZoom)
-      const nextVisibleHeight = getVisibleHeight(nextZoom, viewport)
+      );
+      const nextVisibleWidth = getVisibleWidth(nextZoom);
+      const nextVisibleHeight = getVisibleHeight(nextZoom, viewport);
 
       const nextCamera = clampCamera(
         {
@@ -968,229 +1013,241 @@ function InteractiveMap() {
             (center.y / viewport.height) * nextVisibleHeight,
         },
         viewport,
-      )
+      );
 
-      schedulePreviewCamera(nextCamera)
-      updateHoveredTownId(null)
+      schedulePreviewCamera(nextCamera);
+      updateHoveredTownId(null);
     }
-  }
+  };
 
   const finishGesture = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!pointersRef.current.has(event.pointerId)) {
-      return
+      return;
     }
 
-    const currentGesture = gestureRef.current
-    const isTouchGesture = currentGesture?.kind === 'pan' && currentGesture.pointerType === 'touch'
+    const currentGesture = gestureRef.current;
+    const isTouchGesture =
+      currentGesture?.kind === "pan" && currentGesture.pointerType === "touch";
     const releasedTownId =
-      event.type === 'pointerup' &&
-      currentGesture?.kind === 'pan' &&
+      event.type === "pointerup" &&
+      currentGesture?.kind === "pan" &&
       !currentGesture.moved
         ? getTownIdAtClientPoint(event.clientX, event.clientY)
-        : null
+        : null;
 
-    if (event.pointerType === 'touch') {
-      markTouchInteraction()
-      updateHoveredTownId(null)
+    if (event.pointerType === "touch") {
+      markTouchInteraction();
+      updateHoveredTownId(null);
     }
 
-    pointersRef.current.delete(event.pointerId)
+    pointersRef.current.delete(event.pointerId);
 
-    if (currentGesture?.kind === 'pinch') {
-      commitPreviewCamera(previewCameraRef.current)
+    if (currentGesture?.kind === "pinch") {
+      commitPreviewCamera(previewCameraRef.current);
 
       if (pointersRef.current.size === 1) {
-        const remainingEntry = Array.from(pointersRef.current.entries())[0]
+        const remainingEntry = Array.from(pointersRef.current.entries())[0];
         if (remainingEntry) {
-          const [remainingPointerId, remainingPoint] = remainingEntry
-          continuePanGesture(remainingPointerId, remainingPoint)
+          const [remainingPointerId, remainingPoint] = remainingEntry;
+          continuePanGesture(remainingPointerId, remainingPoint);
         }
       } else if (pointersRef.current.size === 0) {
-        gestureRef.current = null
-        setIsDragging(false)
+        gestureRef.current = null;
+        setIsDragging(false);
       } else {
-        beginPinchGesture()
+        beginPinchGesture();
       }
-    } else if (currentGesture?.kind === 'pan') {
+    } else if (currentGesture?.kind === "pan") {
       const tappedTownId =
         currentGesture.startTownId &&
         releasedTownId === currentGesture.startTownId
           ? currentGesture.startTownId
-          : null
+          : null;
 
       if (tappedTownId) {
         if (isBattleMode) {
-          updateSelectedTownId(tappedTownId)
+          updateSelectedTownId(tappedTownId);
 
           if (!isTouchGesture) {
-            updateHoveredTownId(tappedTownId)
+            updateHoveredTownId(tappedTownId);
           }
         } else {
-          updateSelectedTownId(null)
-          updateHoveredTownId(tappedTownId)
+          updateSelectedTownId(null);
+          updateHoveredTownId(tappedTownId);
         }
       } else if (!currentGesture.moved) {
         if (isBattleMode) {
-          updateSelectedTownId(null)
+          updateSelectedTownId(null);
         }
 
         if (!isTouchGesture || !isBattleMode) {
-          updateHoveredTownId(null)
+          updateHoveredTownId(null);
         }
       }
 
-      commitPreviewCamera(previewCameraRef.current)
-      gestureRef.current = null
+      commitPreviewCamera(previewCameraRef.current);
+      gestureRef.current = null;
 
       if (pointersRef.current.size >= 2) {
-        beginPinchGesture()
+        beginPinchGesture();
       } else if (pointersRef.current.size === 1) {
-        const remainingEntry = Array.from(pointersRef.current.entries())[0]
+        const remainingEntry = Array.from(pointersRef.current.entries())[0];
         if (remainingEntry) {
-          const [remainingPointerId, remainingPoint] = remainingEntry
-          continuePanGesture(remainingPointerId, remainingPoint)
+          const [remainingPointerId, remainingPoint] = remainingEntry;
+          continuePanGesture(remainingPointerId, remainingPoint);
         }
       } else {
-        setIsDragging(false)
+        setIsDragging(false);
       }
     }
 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
+      event.currentTarget.releasePointerCapture(event.pointerId);
     }
-  }
+  };
 
   const handlePointerLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (shouldIgnoreHover(event.pointerType)) {
-      return
+      return;
     }
 
     if (!gestureRef.current) {
-      updateHoveredTownId(null)
+      updateHoveredTownId(null);
     }
-  }
+  };
 
   const handlePointerOver = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (shouldIgnoreHover(event.pointerType)) {
-      return
+      return;
     }
 
-    updateHoveredTownId(getTownIdFromEventTarget(event.target))
-  }
+    updateHoveredTownId(getTownIdFromEventTarget(event.target));
+  };
 
   const handlePointerOut = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (shouldIgnoreHover(event.pointerType)) {
-      return
+      return;
     }
 
-    updateHoveredTownId(getTownIdFromEventTarget(event.relatedTarget))
-  }
+    updateHoveredTownId(getTownIdFromEventTarget(event.relatedTarget));
+  };
 
   const handleResetButtonPointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const handleSettingsButtonPointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
-  const handleSettingsButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation()
-    setIsSettingsOpen((currentState) => !currentState)
-  }
+  const handleSettingsButtonClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+    setIsSettingsOpen((currentState) => !currentState);
+  };
 
   const handleTownLabelsTogglePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const handleTownLabelsToggleClick = (
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
-    event.stopPropagation()
-    setShowTownLabels((currentState) => !currentState)
-  }
+    event.stopPropagation();
+    setShowTownLabels((currentState) => !currentState);
+  };
 
   const handleBattleModeTogglePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   const handleBattleModeToggleClick = (
     event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
-    event.stopPropagation()
+    event.stopPropagation();
     setIsBattleMode((currentState) => {
-      const nextState = !currentState
+      const nextState = !currentState;
 
       if (!nextState) {
-        updateSelectedTownId(null)
+        updateSelectedTownId(null);
       }
 
-      return nextState
-    })
-  }
+      return nextState;
+    });
+  };
 
   const handleLegendTogglePointerDown = (
     event: ReactPointerEvent<HTMLButtonElement>,
   ) => {
-    event.preventDefault()
-    event.stopPropagation()
-  }
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
-  const handleLegendToggleClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation()
-    setIsSettingsOpen(false)
+  const handleLegendToggleClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+    setIsSettingsOpen(false);
     setIsLegendOpen((currentState) => {
       if (!currentState) {
-        setExpandedLegendRegions([])
+        setExpandedLegendRegions([]);
       }
 
-      return !currentState
-    })
-  }
+      return !currentState;
+    });
+  };
 
   const handleLegendRegionToggle = (region: string) => {
     setExpandedLegendRegions((currentRegions) =>
       currentRegions.includes(region)
         ? currentRegions.filter((currentRegion) => currentRegion !== region)
         : [...currentRegions, region],
-    )
-  }
+    );
+  };
 
-  const handleResetButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
-    event.stopPropagation()
-    resetView()
-  }
+  const handleResetButtonClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+    resetView();
+  };
 
-  const activeTownId = (isBattleMode ? selectedTownId : null) ?? hoveredTownId
-  const activeTown = activeTownId ? getTownById(activeTownId, isBattleMode) : null
+  const activeTownId = (isBattleMode ? selectedTownId : null) ?? hoveredTownId;
+  const activeTown = activeTownId
+    ? getTownById(activeTownId, isBattleMode)
+    : null;
   const selectedTownContext =
-    isBattleMode && selectedTownId ? getTownContext(selectedTownId) : null
-  const defaultCamera = viewport ? getFitCamera(viewport) : null
-  const mapLayerStyle = viewport ? getRenderLayerStyle(viewport) : undefined
+    isBattleMode && selectedTownId ? getTownContext(selectedTownId) : null;
+  const defaultCamera = viewport ? getFitCamera(viewport) : null;
+  const mapLayerStyle = viewport ? getRenderLayerStyle(viewport) : undefined;
   const isAtInitialView =
-    !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
-  const isMobileViewport = !!viewport && viewport.width < 640
-  const isCompactHud = !!viewport && viewport.width < COMPACT_HUD_BREAKPOINT_PX
-  const shouldHideActiveTown = isLegendOpen && isMobileViewport
-  const displayedLegendGroups = isBattleMode ? legendGroups : getLegendGroups()
+    !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera);
+  const isMobileViewport = !!viewport && viewport.width < 640;
+  const isCompactHud = !!viewport && viewport.width < COMPACT_HUD_BREAKPOINT_PX;
+  const hasTouchInput = isTouchCapableDevice();
+  const shouldHideSelectedTownPanel = isLegendOpen && isMobileViewport;
+  const shouldHideActiveTownTooltip =
+    shouldHideSelectedTownPanel || (isBattleMode && hasTouchInput);
+  const displayedLegendGroups = isBattleMode ? legendGroups : getLegendGroups();
 
   return (
     <section
       ref={viewportRef}
       className={`relative h-dvh w-screen touch-none select-none overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.78),transparent_28%),linear-gradient(180deg,#dfe7f1_0%,#d5dee9_100%)] ${
-        isDragging ? 'cursor-grabbing' : 'cursor-grab'
+        isDragging ? "cursor-grabbing" : "cursor-grab"
       }`}
       onPointerCancel={finishGesture}
       onPointerDown={handlePointerDown}
@@ -1203,7 +1260,7 @@ function InteractiveMap() {
     >
       {isBattleMode ? (
         <GameHud
-          actionPoints={actionPoints}
+          actionPoints={hasLiveSnapshot ? actionPoints : null}
           capturedTownCount={capturedTownCount}
           compact={isCompactHud}
           contestedTownCount={contestedTownCount}
@@ -1220,8 +1277,8 @@ function InteractiveMap() {
       <div
         className="pointer-events-none absolute z-20 flex items-center gap-2"
         style={{
-          left: 'calc(env(safe-area-inset-left, 0px) + 0.75rem)',
-          top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+          left: "calc(env(safe-area-inset-left, 0px) + 0.75rem)",
+          top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
         }}
       >
         <div
@@ -1266,7 +1323,7 @@ function InteractiveMap() {
                 <button
                   aria-checked={isBattleMode}
                   className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition ${
-                    isBattleMode ? 'bg-slate-950' : 'bg-slate-300'
+                    isBattleMode ? "bg-slate-950" : "bg-slate-300"
                   }`}
                   data-ui-control="true"
                   onClick={handleBattleModeToggleClick}
@@ -1276,7 +1333,7 @@ function InteractiveMap() {
                 >
                   <span
                     className={`h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition ${
-                      isBattleMode ? 'translate-x-6' : 'translate-x-1'
+                      isBattleMode ? "translate-x-6" : "translate-x-1"
                     }`}
                   />
                 </button>
@@ -1295,7 +1352,7 @@ function InteractiveMap() {
                 <button
                   aria-checked={showTownLabels}
                   className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition ${
-                    showTownLabels ? 'bg-slate-950' : 'bg-slate-300'
+                    showTownLabels ? "bg-slate-950" : "bg-slate-300"
                   }`}
                   data-ui-control="true"
                   onClick={handleTownLabelsToggleClick}
@@ -1305,7 +1362,7 @@ function InteractiveMap() {
                 >
                   <span
                     className={`h-5 w-5 rounded-full bg-white shadow-[0_2px_8px_rgba(15,23,42,0.18)] transition ${
-                      showTownLabels ? 'translate-x-6' : 'translate-x-1'
+                      showTownLabels ? "translate-x-6" : "translate-x-1"
                     }`}
                   />
                 </button>
@@ -1326,7 +1383,7 @@ function InteractiveMap() {
                   onPointerDown={handleLegendTogglePointerDown}
                   type="button"
                 >
-                  {isLegendOpen ? 'Hide' : 'Open'}
+                  {isLegendOpen ? "Hide" : "Open"}
                 </button>
               </div>
             </div>
@@ -1349,13 +1406,13 @@ function InteractiveMap() {
       {isLegendOpen ? (
         <aside
           className={`pointer-events-auto absolute flex w-[min(24rem,calc(100vw-1.5rem))] cursor-default select-text flex-col overflow-hidden rounded-3xl border border-white/75 bg-white/92 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur ${
-            isMobileViewport ? 'z-30' : 'z-10'
+            isMobileViewport ? "z-30" : "z-10"
           }`}
           data-ui-control="true"
           style={{
-            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
-            right: 'calc(env(safe-area-inset-right, 0px) + 0.75rem)',
-            top: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)',
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 0.75rem)",
+            right: "calc(env(safe-area-inset-right, 0px) + 0.75rem)",
+            top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
           }}
         >
           <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3">
@@ -1378,7 +1435,7 @@ function InteractiveMap() {
           <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
             <div className="space-y-2">
               {displayedLegendGroups.map((group) => {
-                const isExpanded = expandedLegendRegions.includes(group.region)
+                const isExpanded = expandedLegendRegions.includes(group.region);
 
                 return (
                   <div
@@ -1431,33 +1488,39 @@ function InteractiveMap() {
                       </div>
                     ) : null}
                   </div>
-                )
+                );
               })}
             </div>
           </div>
         </aside>
       ) : null}
 
-      {selectedTownContext && !shouldHideActiveTown ? (
+      {selectedTownContext && !shouldHideSelectedTownPanel ? (
         <TownBattlePanel
-          actionPoints={actionPoints}
+          actionPoints={hasLiveSnapshot ? actionPoints : null}
           battleState={selectedTownContext.town}
-          captureProtectionRemaining={selectedTownContext.captureProtectionRemaining}
-          controlCount={controlCounts[selectedTownContext.town.currentRegion] ?? 0}
+          captureProtectionRemaining={
+            selectedTownContext.captureProtectionRemaining
+          }
+          controlCount={
+            controlCounts[selectedTownContext.town.currentRegion] ?? 0
+          }
           isCaptureProtected={selectedTownContext.isCaptureProtected}
           onClose={() => updateSelectedTownId(null)}
           onDefend={() => onDefend(selectedTownContext.town.townName)}
-          onInvade={(region) => onInvade(selectedTownContext.town.townName, region)}
+          onInvade={(region) =>
+            onInvade(selectedTownContext.town.townName, region)
+          }
           statusMessage={statusMessage}
           validInvadingRegions={selectedTownContext.validInvadingRegions}
         />
-      ) : activeTown && !shouldHideActiveTown ? (
+      ) : activeTown && !shouldHideActiveTownTooltip ? (
         <div
           className="pointer-events-none absolute z-10 max-w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl border border-white/75 bg-white/86 px-4 py-3 shadow-[0_12px_32px_rgba(15,23,42,0.14)] backdrop-blur"
           style={{
-            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
-            left: 'calc(env(safe-area-inset-left, 0px) + 0.75rem)',
-            right: 'calc(env(safe-area-inset-right, 0px) + 0.75rem)',
+            bottom: "calc(env(safe-area-inset-bottom, 0px) + 0.75rem)",
+            left: "calc(env(safe-area-inset-left, 0px) + 0.75rem)",
+            right: "calc(env(safe-area-inset-right, 0px) + 0.75rem)",
           }}
         >
           <div className="flex items-center gap-3">
@@ -1471,16 +1534,17 @@ function InteractiveMap() {
                 {activeTown.town}
               </p>
               <p className="text-xs font-medium text-slate-600">
-                {activeTown.region} ({activeTown.controlCount} {placeNounPlural})
+                {activeTown.region} ({activeTown.controlCount} {placeNounPlural}
+                )
               </p>
               <p className="text-[11px] font-medium text-slate-500">
                 {isBattleMode && activeTown.battleState
                   ? townVisualStates[activeTown.townId]?.isCaptureProtected
-                  ? 'Captured territory'
-                  : activeTown.battleState.isContested
-                  ? `${activeTown.battleState.contestingRegion} invading (${activeTown.battleState.captureProgress}/${CAPTURE_POINTS_TO_CAPTURE})`
-                  : 'Secure territory'
-                  : 'Standard region view'}
+                    ? "Captured territory"
+                    : activeTown.battleState.isContested
+                      ? `${activeTown.battleState.contestingRegion} invading (${activeTown.battleState.captureProgress}/${CAPTURE_POINTS_TO_CAPTURE})`
+                      : "Secure territory"
+                  : null}
               </p>
             </div>
           </div>
@@ -1506,7 +1570,7 @@ function InteractiveMap() {
         </div>
       ) : null}
     </section>
-  )
+  );
 }
 
-export default InteractiveMap
+export default InteractiveMap;

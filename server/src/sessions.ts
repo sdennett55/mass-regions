@@ -50,6 +50,10 @@ function parseCookieHeader(cookieHeader: string | undefined) {
   return cookies;
 }
 
+function getQueryStringValue(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
 function signSessionId(sessionId: string) {
   const signature = createHmac("sha256", serverConfig.sessionSecret)
     .update(sessionId)
@@ -144,14 +148,16 @@ export class AnonymousSessionManager {
 
   resolveSession(request: Request, response: Response, now = Date.now()) {
     const cookies = parseCookieHeader(request.headers.cookie);
-    const verifiedSessionId = verifySignedSessionId(
-      cookies.get(serverConfig.sessionCookieName),
-    );
+    const verifiedSessionId =
+      verifySignedSessionId(getQueryStringValue(request.query.sessionToken)) ??
+      verifySignedSessionId(cookies.get(serverConfig.sessionCookieName));
 
     if (verifiedSessionId) {
+      this.setSessionCookie(response, verifiedSessionId);
       return {
         isNewSession: false,
         sessionId: verifiedSessionId,
+        sessionToken: signSessionId(verifiedSessionId),
       };
     }
 
@@ -161,6 +167,7 @@ export class AnonymousSessionManager {
     return {
       isNewSession: true,
       sessionId,
+      sessionToken: signSessionId(sessionId),
     };
   }
 }

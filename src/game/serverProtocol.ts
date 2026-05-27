@@ -27,14 +27,17 @@ export type ServerActionRequest = {
 export type ServerActionResponse =
   | {
       ok: true;
+      sessionToken?: string;
       snapshot: ServerGameSnapshot;
     }
   | {
       error: string;
       ok: false;
+      sessionToken?: string;
       snapshot: ServerGameSnapshot;
     };
 
 export type ServerStateResponse = {
+  sessionToken?: string;
   snapshot: ServerGameSnapshot;
 };
