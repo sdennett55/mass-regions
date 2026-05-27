@@ -50,6 +50,24 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
+function isSnapshotStale(
+  currentSnapshot: ServerGameSnapshot,
+  nextSnapshot: ServerGameSnapshot,
+) {
+  if (nextSnapshot.revision < currentSnapshot.revision) {
+    return true;
+  }
+
+  if (
+    nextSnapshot.revision === currentSnapshot.revision &&
+    nextSnapshot.serverTime < currentSnapshot.serverTime
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function createAudioContext() {
   if (typeof window === "undefined") {
     return null;
@@ -297,6 +315,11 @@ export function useTerritoryGame() {
 
   const applySnapshot = useCallback((nextSnapshot: ServerGameSnapshot) => {
     const previousSnapshot = snapshotRef.current;
+
+    if (isSnapshotStale(previousSnapshot, nextSnapshot)) {
+      return;
+    }
+
     const receivedAt = Date.now();
     const nextClockAnchor = {
       clientTime: receivedAt,

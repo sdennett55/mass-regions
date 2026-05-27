@@ -15,7 +15,6 @@ import type { TownBattleState } from "../game/types";
 type TownBattlePanelProps = {
   battleState: TownBattleState;
   captureProtectionRemaining: number;
-  controlCount: number;
   actionPoints: number | null;
   isCaptureProtected: boolean;
   onClose: () => void;
@@ -28,7 +27,6 @@ type TownBattlePanelProps = {
 function TownBattlePanel({
   battleState,
   captureProtectionRemaining,
-  controlCount,
   actionPoints,
   isCaptureProtected,
   onClose,
@@ -57,6 +55,16 @@ function TownBattlePanel({
     : !canAct && battleState.isContested
       ? "No points"
       : null;
+  const territoryStateLabel = isCaptureProtected
+    ? "Captured"
+    : battleState.isContested
+      ? "Contested"
+      : "Secure";
+  const territoryStateClassName = isCaptureProtected
+    ? "bg-sky-100 text-sky-800"
+    : battleState.isContested
+      ? "bg-rose-100 text-rose-800"
+      : "bg-emerald-100 text-emerald-800";
 
   return (
     <aside
@@ -73,9 +81,16 @@ function TownBattlePanel({
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
               Territory
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-950">
-              {formatTownLabel(battleState.townName)}
-            </h2>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <h2 className="text-xl font-semibold text-slate-950">
+                {formatTownLabel(battleState.townName)}
+              </h2>
+              <span
+                className={`rounded-full px-2.5 py-1 text-xs font-medium ${territoryStateClassName}`}
+              >
+                {territoryStateLabel}
+              </span>
+            </div>
             <div className="mt-2 flex flex-wrap gap-2 text-xs font-medium">
               <span
                 className="rounded-full px-2.5 py-1 text-slate-950"
@@ -90,26 +105,7 @@ function TownBattlePanel({
                   Formerly {battleState.baselineRegion}
                 </span>
               ) : null}
-              <span
-                className={`rounded-full px-2.5 py-1 ${
-                  isCaptureProtected
-                    ? "bg-sky-100 text-sky-800"
-                    : battleState.isContested
-                      ? "bg-rose-100 text-rose-800"
-                      : "bg-emerald-100 text-emerald-800"
-                }`}
-              >
-                {isCaptureProtected
-                  ? "Captured"
-                  : battleState.isContested
-                    ? "Contested"
-                    : "Secure"}
-              </span>
             </div>
-            <p className="mt-2 text-xs font-medium text-slate-500">
-              {battleState.currentRegion} currently controls {controlCount}{" "}
-              territories.
-            </p>
           </div>
 
           <button
@@ -147,7 +143,7 @@ function TownBattlePanel({
             <p className="mt-2 text-sm font-medium text-slate-700">
               {isCaptureProtected
                 ? "Protected after capture."
-                : `${battleState.contestingRegion} is attemping to capture this territory!`}
+                : `${battleState.contestingRegion} is attempting to capture this territory!`}
             </p>
           ) : null}
         </div>

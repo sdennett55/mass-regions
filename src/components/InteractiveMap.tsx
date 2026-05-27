@@ -1550,9 +1550,6 @@ function InteractiveMap() {
           captureProtectionRemaining={
             selectedTownContext.captureProtectionRemaining
           }
-          controlCount={
-            controlCounts[selectedTownContext.town.currentRegion] ?? 0
-          }
           isCaptureProtected={selectedTownContext.isCaptureProtected}
           onClose={() => updateSelectedTownId(null)}
           onDefend={() => onDefend(selectedTownContext.town.townName)}

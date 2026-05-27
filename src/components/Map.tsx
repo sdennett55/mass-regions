@@ -16,6 +16,8 @@ type MapProps = SVGProps<SVGSVGElement> & {
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const CONTESTED_STRIPES_PATTERN_ID = "contested-town-stripes";
+const STATE_OVERLAY_ATTRIBUTE = "data-town-state-overlay";
+const CAPTURE_PROTECTED_OVERLAY_FILL = "rgba(255, 255, 255, 0.18)";
 
 function ensureContestedStripesPattern(svg: SVGSVGElement) {
   let pattern = svg.querySelector<SVGPatternElement>(
@@ -62,7 +64,7 @@ function getTownPaths(svg: SVGSVGElement, townId: string) {
 function getTownOverlays(svg: SVGSVGElement, townId: string) {
   return Array.from(
     svg.querySelectorAll<SVGPathElement>(
-      `path[data-contested-overlay="${townId}"]`,
+      `path[${STATE_OVERLAY_ATTRIBUTE}="${townId}"]`,
     ),
   );
 }
@@ -75,44 +77,30 @@ function applyTownPathPresentation(params: {
 }) {
   const { isSelectedTown, path, region, townVisualState } = params;
   const filterParts: string[] = [];
+  const isInteriorSafeTown =
+    !!townVisualState &&
+    !townVisualState.isContested &&
+    !townVisualState.isCaptureProtected &&
+    !townVisualState.isFrontline;
 
   path.dataset.region = region;
-  path.classList.remove(
-    "town-contested",
-    "town-frontline",
-    "town-capture-protected",
-  );
+  path.classList.remove("town-contested");
   path.style.strokeDasharray = "";
   path.style.filter = "";
   path.style.opacity = "1";
   path.style.cursor = "pointer";
   path.style.fill = getRegionColor(region);
+  path.style.fillOpacity = isInteriorSafeTown ? "0.82" : "1";
+  path.style.stroke = "rgba(15, 23, 42, 0.16)";
+  path.style.strokeWidth = "0.28";
 
   if (townVisualState?.isContested) {
     path.classList.add("town-contested");
-    path.style.stroke = "rgba(239, 68, 68, 0.98)";
-    path.style.strokeWidth = "0.68";
-    filterParts.push(
-      "drop-shadow(0 0 6px rgba(239,68,68,0.62))",
-      "drop-shadow(0 0 2px rgba(248,113,113,0.48))",
-    );
-  } else if (townVisualState?.isCaptureProtected) {
-    path.classList.add("town-capture-protected");
-    path.style.stroke = "rgba(248, 250, 252, 0.88)";
-    path.style.strokeWidth = "0.72";
-    filterParts.push("drop-shadow(0 0 4px rgba(255,255,255,0.55))");
-  } else if (townVisualState?.isFrontline) {
-    path.classList.add("town-frontline");
-    path.style.stroke = "rgba(15, 23, 42, 0.54)";
-    path.style.strokeWidth = "0.56";
-  } else {
-    path.style.stroke = "rgba(15, 23, 42, 0.18)";
-    path.style.strokeWidth = "0.28";
   }
 
   if (isSelectedTown) {
     path.style.stroke = "rgba(56, 189, 248, 0.98)";
-    path.style.strokeWidth = townVisualState?.isContested ? "0.92" : "0.84";
+    path.style.strokeWidth = "0.84";
     filterParts.push(
       "drop-shadow(0 0 8px rgba(56,189,248,0.9))",
       "drop-shadow(0 0 2px rgba(15,23,42,0.3))",
@@ -148,10 +136,10 @@ const SvgComponent = ({
 
     ensureContestedStripesPattern(svg);
 
-    const contestedOverlays = svg.querySelectorAll<SVGPathElement>(
-      "path[data-contested-overlay]",
+    const stateOverlays = svg.querySelectorAll<SVGPathElement>(
+      `path[${STATE_OVERLAY_ATTRIBUTE}]`,
     );
-    for (const overlay of contestedOverlays) {
+    for (const overlay of stateOverlays) {
       overlay.remove();
     }
 
@@ -190,12 +178,31 @@ const SvgComponent = ({
       if (townVisualState?.isContested) {
         const overlay = path.cloneNode(false) as SVGPathElement;
         overlay.removeAttribute("id");
-        overlay.setAttribute("data-contested-overlay", canonicalTownId);
+        overlay.setAttribute(STATE_OVERLAY_ATTRIBUTE, canonicalTownId);
         overlay.classList.add("town-contested-overlay");
         overlay.style.fill = `url(#${CONTESTED_STRIPES_PATTERN_ID})`;
         overlay.style.opacity = "1";
         overlay.style.pointerEvents = "none";
         overlay.style.stroke = "none";
+        overlay.style.fillOpacity = "1";
+        overlay.style.filter = "";
+        if (isSelectedTown) {
+          selectedOverlayEntries.push({ overlay, parent: path.parentElement });
+        } else {
+          overlayEntries.push({ overlay, parent: path.parentElement });
+        }
+      } else if (townVisualState?.isCaptureProtected) {
+        const overlay = path.cloneNode(false) as SVGPathElement;
+        overlay.removeAttribute("id");
+        overlay.setAttribute(STATE_OVERLAY_ATTRIBUTE, canonicalTownId);
+        overlay.classList.add("town-capture-protected-overlay");
+        overlay.style.fill = CAPTURE_PROTECTED_OVERLAY_FILL;
+        overlay.style.opacity = "1";
+        overlay.style.pointerEvents = "none";
+        overlay.style.stroke = "none";
+        overlay.style.fillOpacity = "1";
+        overlay.style.filter =
+          "drop-shadow(0 0 4px rgba(255,255,255,0.2)) drop-shadow(0 0 1px rgba(255,255,255,0.25))";
         if (isSelectedTown) {
           selectedOverlayEntries.push({ overlay, parent: path.parentElement });
         } else {
@@ -203,11 +210,7 @@ const SvgComponent = ({
         }
       }
 
-      if (
-        townVisualState?.isFrontline ||
-        townVisualState?.isCaptureProtected ||
-        townVisualState?.isContested
-      ) {
+      if (townVisualState?.isContested || townVisualState?.isCaptureProtected) {
         promotedTownPaths.push(path);
       }
 
