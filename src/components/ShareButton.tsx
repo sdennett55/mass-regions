@@ -10,7 +10,7 @@ import { Share2 } from "lucide-react";
 const SHARE_FEEDBACK_RESET_MS = 2200;
 const SHARE_TITLE = "YOUR REGION NEEDS YOU | Border Beef";
 const SHARE_TEXT =
-  "Massachusetts is at war. Enlist with your region, capture territories, and help decide who controls the map this week.";
+  "Massachusetts is at war. Attack, capture, and defend territories to help decide which region controls the state this week.";
 
 async function copyTextToClipboard(text: string) {
   if (
