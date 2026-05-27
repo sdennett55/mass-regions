@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { ChevronDown, ChevronRight, Settings2, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Info, Settings2, X } from "lucide-react";
 
 import {
   formatTownLabel,
@@ -16,7 +16,10 @@ import {
   getRegionTownCount,
   getLegendGroups,
 } from "../data/massRegions";
-import { CAPTURE_POINTS_TO_CAPTURE } from "../game/constants";
+import {
+  CAPTURE_POINTS_TO_CAPTURE,
+  PLAYER_ACTION_REGEN_INTERVAL_MS,
+} from "../game/constants";
 import { useTerritoryGame } from "../game/useTerritoryGame";
 import type { TownBattleState } from "../game/types";
 import ActivityFeed from "./ActivityFeed";
@@ -33,6 +36,8 @@ const PAN_SAFE_AREA_Y = SVG_HEIGHT / 2;
 const WHEEL_COMMIT_DELAY_MS = 90;
 const MAP_VIEW_STORAGE_KEY = "mass-regions:view";
 const MAP_SETTINGS_STORAGE_KEY = "mass-regions:settings";
+const BATTLE_EXPLAINER_DISMISSED_STORAGE_KEY =
+  "mass-regions:battle-explainer-dismissed";
 const TOUCH_HOVER_BLOCK_MS = 800;
 const RENDER_BUFFER_RATIO = 0.18;
 const REGIONS_MODE_QUERY_VALUE = "regions";
@@ -363,6 +368,36 @@ function saveStoredMapSettings(settings: StoredMapSettings) {
   }
 }
 
+function loadBattleExplainerDismissed() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    return (
+      window.localStorage.getItem(BATTLE_EXPLAINER_DISMISSED_STORAGE_KEY) ===
+      "1"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function saveBattleExplainerDismissed() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      BATTLE_EXPLAINER_DISMISSED_STORAGE_KEY,
+      "1",
+    );
+  } catch {
+    // Ignore storage failures so the hint can still be dismissed for this session.
+  }
+}
+
 function isTouchCapableDevice() {
   if (typeof window === "undefined") {
     return false;
@@ -434,6 +469,9 @@ function InteractiveMap() {
   const [isBattleMode, setIsBattleMode] = useState(
     initialSettings?.battleMode ?? true,
   );
+  const [showBattleExplainer, setShowBattleExplainer] = useState(
+    () => !loadBattleExplainerDismissed(),
+  );
   const [hoveredTownId, setHoveredTownId] = useState<string | null>(null);
   const [selectedTownId, setSelectedTownId] = useState<string | null>(null);
   const {
@@ -461,6 +499,9 @@ function InteractiveMap() {
     : "Municipality names";
   const legendDescription = `Browse all regions and ${placeNounPlural}`;
   const mapAriaLabel = `Map of Massachusetts ${placeNounPlural} colored by region`;
+  const actionPointRegenMinutes = Math.round(
+    PLAYER_ACTION_REGEN_INTERVAL_MS / (60 * 1000),
+  );
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
@@ -486,6 +527,11 @@ function InteractiveMap() {
     setSelectedTownId((currentTownId) =>
       currentTownId === nextTownId ? currentTownId : nextTownId,
     );
+  };
+
+  const dismissBattleExplainer = () => {
+    setShowBattleExplainer(false);
+    saveBattleExplainerDismissed();
   };
 
   const markTouchInteraction = () => {
@@ -1309,6 +1355,45 @@ function InteractiveMap() {
           now={serverNow}
           showDismissVeil={showDismissVeil}
         />
+      ) : null}
+
+      {isBattleMode && showBattleExplainer ? (
+        <aside
+          className="pointer-events-auto absolute z-10 w-[min(25rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 cursor-default select-text overflow-hidden rounded-2xl border border-white/75 bg-white/94 shadow-[0_16px_40px_rgba(15,23,42,0.16)] backdrop-blur"
+          data-ui-control="true"
+          style={{
+            left: "50%",
+            top: "50%",
+          }}
+        >
+          <div className="flex items-start gap-3 px-4 py-3">
+            <Info
+              className="h-4 w-4 shrink-0 self-center text-slate-400"
+              strokeWidth={2.1}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-slate-700">
+                Select a territory to attack for a neighboring region, or
+                defend it from capture.
+              </p>
+              <p className="mt-1 text-xs font-medium text-slate-500">
+                {hasLiveSnapshot
+                  ? `You have ${actionPoints} points to spend. +1 point every ${actionPointRegenMinutes} min.`
+                  : "Syncing your points..."}
+              </p>
+            </div>
+
+            <button
+              aria-label="Dismiss explainer"
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50"
+              data-ui-control="true"
+              onClick={dismissBattleExplainer}
+              type="button"
+            >
+              <X className="h-4 w-4" strokeWidth={2.1} />
+            </button>
+          </div>
+        </aside>
       ) : null}
 
       <div
