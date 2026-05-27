@@ -163,7 +163,7 @@ function ActivityFeed({ events, now, showDismissVeil }: ActivityFeedProps) {
           aria-expanded={isOpen}
           aria-haspopup="dialog"
           aria-label="Activity"
-          className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/75 bg-slate-950/82 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur transition hover:bg-slate-950/88"
+          className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/75 bg-slate-950 text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition hover:bg-slate-800"
           data-ui-control="true"
           onClick={handleToggleClick}
           onPointerDown={handleTogglePointerDown}
