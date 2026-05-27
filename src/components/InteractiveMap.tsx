@@ -3,6 +3,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -509,11 +510,15 @@ function InteractiveMap() {
   const labelsSettingLabel = isBattleMode
     ? "Territory names"
     : "Municipality names";
-  const legendDescription = `Browse all regions and ${placeNounPlural}`;
+  const legendLabel = isBattleMode ? "Leaderboard" : "Legend";
+  const legendDescription = isBattleMode
+    ? "Live region standings"
+    : `Browse all regions and ${placeNounPlural}`;
   const mapAriaLabel = `Map of Massachusetts ${placeNounPlural} colored by region`;
   const actionPointRegenMinutes = Math.round(
     PLAYER_ACTION_REGEN_INTERVAL_MS / (60 * 1000),
   );
+  const legendSubheading = isBattleMode ? "Live standings" : "All regions";
 
   const clearWheelCommitTimer = () => {
     if (wheelCommitTimerRef.current !== null) {
@@ -1332,7 +1337,27 @@ function InteractiveMap() {
   const shouldHideSelectedTownPanel = isLegendOpen && isMobileViewport;
   const shouldHideActiveTownTooltip =
     shouldHideSelectedTownPanel || (isBattleMode && hasTouchInput);
-  const displayedLegendGroups = isBattleMode ? legendGroups : getLegendGroups();
+  const displayedLegendGroups = useMemo(() => {
+    if (!isBattleMode) {
+      return getLegendGroups();
+    }
+
+    return legendGroups
+      .map((group, index) => ({
+        group,
+        index,
+      }))
+      .sort((groupA, groupB) => {
+        const townCountDifference =
+          groupB.group.townCount - groupA.group.townCount;
+        if (townCountDifference !== 0) {
+          return townCountDifference;
+        }
+
+        return groupA.index - groupB.index;
+      })
+      .map(({ group }) => group);
+  }, [isBattleMode, legendGroups]);
 
   return (
     <section
@@ -1517,7 +1542,9 @@ function InteractiveMap() {
 
               <div className="flex items-center justify-between gap-3 px-4 py-3">
                 <div>
-                  <p className="text-sm font-semibold text-slate-950">Legend</p>
+                  <p className="text-sm font-semibold text-slate-950">
+                    {legendLabel}
+                  </p>
                   <p className="text-xs font-medium text-slate-500">
                     {legendDescription}
                   </p>
@@ -1567,8 +1594,12 @@ function InteractiveMap() {
         >
           <div className="flex items-center justify-between border-b border-slate-200/80 px-4 py-3">
             <div>
-              <p className="text-sm font-semibold text-slate-950">Legend</p>
-              <p className="text-xs font-medium text-slate-500">All regions</p>
+              <p className="text-sm font-semibold text-slate-950">
+                {legendLabel}
+              </p>
+              <p className="text-xs font-medium text-slate-500">
+                {legendSubheading}
+              </p>
             </div>
 
             <button
@@ -1584,7 +1615,7 @@ function InteractiveMap() {
 
           <div className="min-h-0 flex-1 overflow-auto px-2 py-2">
             <div className="space-y-2">
-              {displayedLegendGroups.map((group) => {
+              {displayedLegendGroups.map((group, index) => {
                 const isExpanded = expandedLegendRegions.includes(group.region);
 
                 return (
@@ -1599,6 +1630,11 @@ function InteractiveMap() {
                       type="button"
                     >
                       <div className="flex min-w-0 items-center gap-3">
+                        {isBattleMode ? (
+                          <span className="w-7 shrink-0 text-xs font-semibold text-slate-500">
+                            #{index + 1}
+                          </span>
+                        ) : null}
                         <span
                           aria-hidden="true"
                           className="h-3 w-3 shrink-0 rounded-full shadow-inner shadow-black/10"
