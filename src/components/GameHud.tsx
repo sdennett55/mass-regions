@@ -158,7 +158,7 @@ function GameHud({
                 Points
               </p>
               <p
-                className={`text-sm font-semibold ${actionPointsValueClassName}`}
+                className={`text-sm font-semibold w-8.75 ${actionPointsValueClassName}`}
               >
                 {actionPointsLabelSm}
               </p>
