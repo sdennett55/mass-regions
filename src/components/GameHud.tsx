@@ -36,6 +36,14 @@ function GameHud({
     ) : (
       `${actionPoints}/${PLAYER_MAX_ACTION_POINTS}`
     );
+  const actionPointsLabelSm =
+    actionPoints === null ? (
+      <span className="w-8.75 h-7 flex justify-center items-center">
+        <Loader2 className="animate-spin" size={16} />
+      </span>
+    ) : (
+      `${actionPoints}/${PLAYER_MAX_ACTION_POINTS}`
+    );
   const actionPointsValueClassName =
     actionPoints === 0 ? "text-rose-400" : "text-white";
 
@@ -145,14 +153,14 @@ function GameHud({
             onPointerDown={handleTogglePointerDown}
             type="button"
           >
-            <div className="flex items-baseline gap-2 text-left">
+            <div className="flex items-center gap-2 text-left">
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
                 Points
               </p>
               <p
                 className={`text-sm font-semibold ${actionPointsValueClassName}`}
               >
-                {actionPointsLabel}
+                {actionPointsLabelSm}
               </p>
             </div>
             {isOpen ? (

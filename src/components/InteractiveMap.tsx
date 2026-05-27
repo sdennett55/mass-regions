@@ -95,6 +95,24 @@ type StoredMapSettings = {
   showTownLabels: boolean;
 };
 
+function getInitialViewport() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const width = window.visualViewport?.width ?? window.innerWidth;
+  const height = window.visualViewport?.height ?? window.innerHeight;
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    width,
+    height,
+  } satisfies Viewport;
+}
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -402,7 +420,7 @@ function InteractiveMap() {
   const previewCameraRef = useRef<CameraState | null>(null);
   const lastTouchInteractionTimeRef = useRef(0);
 
-  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const [viewport, setViewport] = useState<Viewport | null>(() => getInitialViewport());
   const [camera, setCamera] = useState<CameraState | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isLegendOpen, setIsLegendOpen] = useState(false);
