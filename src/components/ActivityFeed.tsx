@@ -121,7 +121,7 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
 
   return (
     <div
-      className="pointer-events-none absolute z-10"
+      className="pointer-events-none absolute"
       data-ui-control="true"
       style={{
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
@@ -137,7 +137,7 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
           aria-expanded={isOpen}
           aria-haspopup="dialog"
           aria-label="Activity"
-          className="relative flex h-10 w-10 items-center justify-center rounded-full border border-white/75 bg-slate-950/82 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur transition hover:bg-slate-950/88"
+          className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full border border-white/75 bg-slate-950/82 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur transition hover:bg-slate-950/88"
           data-ui-control="true"
           onClick={handleToggleClick}
           onPointerDown={handleTogglePointerDown}
@@ -154,7 +154,7 @@ function ActivityFeed({ events, now }: ActivityFeedProps) {
 
         {isOpen ? (
           <aside
-            className="absolute bottom-full right-0 mb-2 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl border border-white/75 bg-white/94 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
+            className="absolute bottom-full right-0 z-20 mb-2 flex w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-3xl border border-white/75 bg-white/94 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
             data-ui-control="true"
           >
             <div className="border-b border-slate-200/80 px-4 py-3">

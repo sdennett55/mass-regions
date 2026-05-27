@@ -36,6 +36,7 @@ const MAP_SETTINGS_STORAGE_KEY = 'mass-regions:settings'
 const TOUCH_HOVER_BLOCK_MS = 800
 const RENDER_BUFFER_RATIO = 0.18
 const REGIONS_MODE_QUERY_VALUE = 'regions'
+const COMPACT_HUD_BREAKPOINT_PX = 900
 
 type Viewport = {
   width: number
@@ -1181,7 +1182,7 @@ function InteractiveMap() {
   const isAtInitialView =
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera)
   const isMobileViewport = !!viewport && viewport.width < 640
-  const isCompactHud = isMobileViewport
+  const isCompactHud = !!viewport && viewport.width < COMPACT_HUD_BREAKPOINT_PX
   const shouldHideActiveTown = isLegendOpen && isMobileViewport
   const displayedLegendGroups = isBattleMode ? legendGroups : getLegendGroups()
 

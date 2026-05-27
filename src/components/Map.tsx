@@ -80,7 +80,7 @@ function applyTownPathPresentation(params: {
   path.classList.remove(
     "town-contested",
     "town-frontline",
-    "town-recently-captured",
+    "town-capture-protected",
   );
   path.style.strokeDasharray = "";
   path.style.filter = "";
@@ -96,8 +96,8 @@ function applyTownPathPresentation(params: {
       "drop-shadow(0 0 6px rgba(239,68,68,0.62))",
       "drop-shadow(0 0 2px rgba(248,113,113,0.48))",
     );
-  } else if (townVisualState?.isRecentlyCaptured) {
-    path.classList.add("town-recently-captured");
+  } else if (townVisualState?.isCaptureProtected) {
+    path.classList.add("town-capture-protected");
     path.style.stroke = "rgba(248, 250, 252, 0.88)";
     path.style.strokeWidth = "0.72";
     filterParts.push("drop-shadow(0 0 4px rgba(255,255,255,0.55))");
@@ -205,7 +205,7 @@ const SvgComponent = ({
 
       if (
         townVisualState?.isFrontline ||
-        townVisualState?.isRecentlyCaptured ||
+        townVisualState?.isCaptureProtected ||
         townVisualState?.isContested
       ) {
         promotedTownPaths.push(path);

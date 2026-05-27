@@ -49,7 +49,11 @@ function TownBattlePanel({
     : battleState.isContested
       ? `Defend ${battleState.currentRegion}`
       : "No invasion to defend";
-  const defendStatusLabel = isCaptureProtected ? "Protected" : null;
+  const defendStatusLabel = isCaptureProtected
+    ? "Protected"
+    : !canAct && battleState.isContested
+      ? "No points"
+      : null;
 
   return (
     <aside
@@ -154,7 +158,7 @@ function TownBattlePanel({
 
         <div className="space-y-3">
           <button
-            className={`w-full rounded-2xl border px-3 py-3 text-sm font-semibold transition ${
+            className={`flex w-full items-center justify-between rounded-2xl border px-3 py-3 text-left text-sm font-semibold transition ${
               canDefend
                 ? "border-sky-500 bg-sky-500/14 text-sky-950 shadow-[0_10px_24px_rgba(14,165,233,0.12)] enabled:cursor-pointer enabled:hover:border-sky-400 enabled:hover:bg-sky-500/22"
                 : "border-slate-200 bg-slate-100 text-slate-400 disabled:cursor-not-allowed"
@@ -164,27 +168,25 @@ function TownBattlePanel({
             onClick={onDefend}
             type="button"
           >
-            <span className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Shield className="h-4 w-4 shrink-0" strokeWidth={2.1} />
-                <span
-                  className="h-3 w-3 shrink-0 rounded-full bg-white/90 shadow-inner shadow-black/10"
-                  style={{
-                    backgroundColor: getRegionColor(battleState.currentRegion),
-                  }}
-                />
-                {defendLabel}
-              </span>
-              {defendStatusLabel ? (
-                <span
-                  className={`text-xs ${
-                    canDefend ? "text-sky-700" : "text-slate-500"
-                  }`}
-                >
-                  {defendStatusLabel}
-                </span>
-              ) : null}
+            <span className="flex items-center gap-2">
+              <Shield className="h-4 w-4 shrink-0" strokeWidth={2.1} />
+              <span
+                className="h-3 w-3 shrink-0 rounded-full bg-white/90 shadow-inner shadow-black/10"
+                style={{
+                  backgroundColor: getRegionColor(battleState.currentRegion),
+                }}
+              />
+              {defendLabel}
             </span>
+            {defendStatusLabel ? (
+              <span
+                className={`shrink-0 text-xs ${
+                  canDefend ? "text-sky-700" : "text-slate-500"
+                }`}
+              >
+                {defendStatusLabel}
+              </span>
+            ) : null}
           </button>
 
           <div className="space-y-2">
@@ -200,6 +202,8 @@ function TownBattlePanel({
                     canAct && !isCaptureProtected && !isLockedOut;
                   const attackStatusLabel = isCaptureProtected
                     ? "Protected"
+                    : !canAct
+                      ? "No points"
                     : isLockedOut
                       ? "Locked"
                       : null;
@@ -227,7 +231,7 @@ function TownBattlePanel({
                       </span>
                       {attackStatusLabel ? (
                         <span
-                          className={`text-xs ${
+                          className={`shrink-0 text-xs ${
                             canCaptureForRegion
                               ? "text-rose-700"
                               : "text-slate-500"

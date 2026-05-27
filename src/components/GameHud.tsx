@@ -87,7 +87,7 @@ function GameHud({
   if (compact) {
     return (
       <div
-        className="pointer-events-none absolute z-10"
+        className="pointer-events-none absolute z-20"
         data-ui-control="true"
         style={{
           right: 'calc(env(safe-area-inset-right, 0px) + 0.75rem)',

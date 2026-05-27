@@ -37,7 +37,7 @@ body {
   animation: town-frontline-pulse 2.4s ease-in-out infinite;
 }
 
-.town-recently-captured {
+.town-capture-protected {
   animation: town-captured-pulse 1.8s ease-in-out infinite;
 }
 
