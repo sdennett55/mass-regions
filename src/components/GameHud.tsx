@@ -85,7 +85,9 @@ function GameHud({
 
       <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] font-medium text-slate-200">
         <div className="rounded-2xl bg-white/10 px-2 py-2">
-          <p className="uppercase tracking-[0.16em] text-slate-300">Next +1</p>
+          <p className="uppercase tracking-[0.16em] text-slate-300">
+            Next Point
+          </p>
           <p className="mt-1 text-sm font-semibold text-white">
             {actionPoints === null ? (
               <span className="h-5 flex justify-center items-center">
@@ -94,7 +96,7 @@ function GameHud({
             ) : nextActionPointIn > 0 ? (
               formatDurationShort(nextActionPointIn)
             ) : (
-              "Ready"
+              "Full"
             )}
           </p>
         </div>
@@ -178,7 +180,7 @@ function GameHud({
 
           {isOpen ? (
             <div
-              className="absolute right-0 top-full mt-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-3xl border border-white/75 bg-slate-950/82 px-4 py-3 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur"
+              className="absolute right-0 top-full mt-2 w-[min(23rem,calc(100vw-1.5rem))] rounded-3xl border border-white/75 bg-slate-950/82 px-4 py-3 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur"
               data-ui-control="true"
             >
               {hudContent}
@@ -191,7 +193,7 @@ function GameHud({
 
   return (
     <div
-      className="pointer-events-auto absolute z-10 max-w-[min(20rem,calc(100vw-1.5rem))] cursor-default select-text rounded-3xl border border-white/75 bg-slate-950/82 px-4 py-3 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur"
+      className="pointer-events-auto absolute z-10 max-w-[min(23rem,calc(100vw-1.5rem))] cursor-default select-text rounded-3xl border border-white/75 bg-slate-950/82 px-4 py-3 text-white shadow-[0_16px_40px_rgba(15,23,42,0.24)] backdrop-blur"
       data-ui-control="true"
       style={{
         right: "calc(env(safe-area-inset-right, 0px) + 0.75rem)",

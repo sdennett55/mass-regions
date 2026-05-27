@@ -1312,7 +1312,7 @@ function InteractiveMap() {
       ) : null}
 
       <div
-        className="pointer-events-none absolute z-20 flex items-center gap-2"
+        className="pointer-events-none absolute flex items-center gap-2"
         style={{
           left: "calc(env(safe-area-inset-left, 0px) + 0.75rem)",
           top: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
@@ -1321,7 +1321,7 @@ function InteractiveMap() {
         {isSettingsOpen && showDismissVeil ? (
           <button
             aria-label="Close settings"
-            className="pointer-events-auto fixed inset-0 cursor-default bg-transparent"
+            className="pointer-events-auto fixed inset-0 z-20 cursor-default bg-transparent"
             data-ui-control="true"
             onClick={handleSettingsBackdropClick}
             onPointerDown={handleSettingsBackdropPointerDown}
@@ -1331,7 +1331,9 @@ function InteractiveMap() {
 
         <div
           ref={settingsPanelRef}
-          className="pointer-events-auto relative cursor-default select-text"
+          className={`pointer-events-auto relative cursor-default select-text ${
+            isSettingsOpen ? "z-30" : "z-10"
+          }`}
           data-ui-control="true"
         >
           <button
@@ -1441,7 +1443,7 @@ function InteractiveMap() {
         {!isAtInitialView ? (
           <button
             data-ui-control="true"
-            className="pointer-events-auto cursor-pointer rounded-full border border-white/75 bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition hover:bg-slate-800"
+            className="pointer-events-auto relative z-10 cursor-pointer rounded-full border border-white/75 bg-slate-950 px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.16)] transition hover:bg-slate-800"
             onClick={handleResetButtonClick}
             onPointerDown={handleResetButtonPointerDown}
             type="button"

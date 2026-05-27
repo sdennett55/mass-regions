@@ -68,11 +68,13 @@ function TownBattlePanel({
 
   return (
     <aside
-      className="pointer-events-auto absolute z-10 w-[min(26rem,calc(100vw-1.5rem))] cursor-default select-text overflow-hidden rounded-3xl border border-white/75 bg-white/94 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
+      className="pointer-events-auto absolute z-10 flex w-[min(26rem,calc(100vw-1.5rem))] cursor-default select-text flex-col overflow-hidden rounded-3xl border border-white/75 bg-white/94 shadow-[0_18px_48px_rgba(15,23,42,0.18)] backdrop-blur"
       data-ui-control="true"
       style={{
         bottom: "calc(env(safe-area-inset-bottom, 0px) + 0.75rem)",
         left: "calc(env(safe-area-inset-left, 0px) + 0.75rem)",
+        maxHeight:
+          "calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1.5rem)",
       }}
     >
       <div className="border-b border-slate-200/80 px-4 py-3">
@@ -119,7 +121,7 @@ function TownBattlePanel({
         </div>
       </div>
 
-      <div className="space-y-4 px-4 py-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
         <div>
           <div className="flex items-center justify-between text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
             <span>Capture meter</span>
