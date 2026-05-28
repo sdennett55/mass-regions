@@ -11,6 +11,7 @@ import { ServerPersistence } from "./persistence.ts"
 import { AnonymousSessionManager } from "./sessions.ts"
 import type {
   ServerActionRequest,
+  ServerGameEvent,
   ServerStateResponse,
 } from "./protocol.ts"
 
@@ -176,8 +177,8 @@ app.get("/api/events", eventLimiter, (request, response) => {
 
   sendEvent("snapshot", store.getSnapshot(sessionId))
 
-  const unsubscribe = store.subscribe(() => {
-    sendEvent("snapshot", store.getSnapshot(sessionId))
+  const unsubscribe = store.subscribe((event: ServerGameEvent) => {
+    sendEvent(event.type, event)
   })
 
   const heartbeatId = setInterval(() => {

@@ -3,6 +3,8 @@ import type {
   PlayerAction,
   PlayerState,
   SeasonState,
+  TownBattleState,
+  TownName,
   TownVisualState,
 } from "./types";
 
@@ -23,6 +25,33 @@ export type ServerGameSnapshot = {
 export type ServerActionRequest = {
   action: PlayerAction;
 };
+
+export type ServerWorldUpdateEvent = {
+  type: "world-update";
+  changedTowns: Array<{
+    town: TownBattleState;
+    townName: TownName;
+  }>;
+  capturedTownCount: number;
+  contestedTownCount: number;
+  controlCounts: Record<RegionName, number>;
+  revision: number;
+  serverTime: number;
+};
+
+export type ServerSeasonResetEvent = {
+  type: "season-reset";
+  capturedTownCount: number;
+  contestedTownCount: number;
+  controlCounts: Record<RegionName, number>;
+  revision: number;
+  season: SeasonState;
+  seasonLabel: string;
+  seasonTimeRemaining: number;
+  serverTime: number;
+};
+
+export type ServerGameEvent = ServerWorldUpdateEvent | ServerSeasonResetEvent;
 
 export type ServerActionResponse =
   | {

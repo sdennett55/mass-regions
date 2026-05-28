@@ -19,7 +19,7 @@ import {
   postServerAction,
 } from "./serverClient";
 import { sharedTownNeighbors } from "./townNeighbors";
-import type { ServerGameSnapshot } from "./serverProtocol";
+import type { ServerGameEvent, ServerGameSnapshot } from "./serverProtocol";
 import type {
   ActivityEvent,
   PlayerAction,
@@ -449,6 +449,57 @@ export function useTerritoryGame() {
     setClientNow(receivedAt);
   }, []);
 
+  const applyWorldEvent = useCallback((event: ServerGameEvent) => {
+    const currentSnapshot = snapshotRef.current;
+
+    if (event.revision < currentSnapshot.revision) {
+      return;
+    }
+
+    if (event.type === "season-reset") {
+      applySnapshot({
+        ...currentSnapshot,
+        capturedTownCount: event.capturedTownCount,
+        contestedTownCount: event.contestedTownCount,
+        controlCounts: event.controlCounts,
+        revision: event.revision,
+        season: event.season,
+        seasonLabel: event.seasonLabel,
+        seasonTimeRemaining: event.seasonTimeRemaining,
+        serverTime: event.serverTime,
+        townVisualStates: currentSnapshot.townVisualStates,
+      });
+      return;
+    }
+
+    const nextSeason = {
+      ...currentSnapshot.season,
+      towns: {
+        ...currentSnapshot.season.towns,
+      },
+    };
+
+    for (const changedTown of event.changedTowns) {
+      nextSeason.towns[changedTown.townName] = changedTown.town;
+    }
+
+    applySnapshot({
+      ...currentSnapshot,
+      capturedTownCount: event.capturedTownCount,
+      contestedTownCount: event.contestedTownCount,
+      controlCounts: event.controlCounts,
+      nextActionPointIn: getTimeUntilNextActionPoint(
+        currentSnapshot.player,
+        event.serverTime,
+      ),
+      revision: event.revision,
+      season: nextSeason,
+      seasonTimeRemaining: getSeasonTimeRemaining(nextSeason, event.serverTime),
+      serverTime: event.serverTime,
+      townVisualStates: currentSnapshot.townVisualStates,
+    });
+  }, [applySnapshot]);
+
   const refreshSnapshot = useCallback(
     async (options?: { signal?: AbortSignal; suppressError?: boolean }) => {
       if (refreshInFlightRef.current) {
@@ -506,6 +557,17 @@ export function useTerritoryGame() {
       }
     };
 
+    const handleWorldEvent = (event: Event) => {
+      try {
+        const nextEvent = JSON.parse(
+          (event as MessageEvent<string>).data,
+        ) as ServerGameEvent;
+        applyWorldEvent(nextEvent);
+      } catch {
+        // Ignore malformed world events so the stream can keep running.
+      }
+    };
+
     const handleHeartbeat = (event: Event) => {
       try {
         const payload = JSON.parse((event as MessageEvent<string>).data) as {
@@ -536,16 +598,20 @@ export function useTerritoryGame() {
     };
 
     eventSource.addEventListener("snapshot", handleSnapshot);
+    eventSource.addEventListener("world-update", handleWorldEvent);
+    eventSource.addEventListener("season-reset", handleWorldEvent);
     eventSource.addEventListener("heartbeat", handleHeartbeat);
     eventSource.addEventListener("error", handleError);
 
     return () => {
       eventSource.removeEventListener("snapshot", handleSnapshot);
+      eventSource.removeEventListener("world-update", handleWorldEvent);
+      eventSource.removeEventListener("season-reset", handleWorldEvent);
       eventSource.removeEventListener("heartbeat", handleHeartbeat);
       eventSource.removeEventListener("error", handleError);
       eventSource.close();
     };
-  }, [applySnapshot, hasLiveSnapshot, refreshSnapshot, sessionToken]);
+  }, [applySnapshot, applyWorldEvent, hasLiveSnapshot, refreshSnapshot, sessionToken]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {

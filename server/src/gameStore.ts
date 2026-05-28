@@ -20,11 +20,14 @@ import type {
 
 import type {
   ServerActionResponse,
+  ServerGameEvent,
   ServerGameSnapshot,
+  ServerSeasonResetEvent,
+  ServerWorldUpdateEvent,
 } from "./protocol.ts"
 import type { ServerPersistence } from "./persistence.ts"
 
-type StoreListener = () => void
+type StoreListener = (event: ServerGameEvent) => void
 
 export class TerritoryGameStore {
   private listeners = new Set<StoreListener>()
@@ -49,12 +52,26 @@ export class TerritoryGameStore {
     }
   }
 
-  private emitChange() {
+  private getContestedTownCount(season: SeasonState) {
+    return Object.values(season.towns).filter((town) => town.isContested).length
+  }
+
+  private getCapturedTownCountForSeason(season: SeasonState, now: number) {
+    const townVisualStates = buildTownVisualStates(season, this.townNeighbors, now)
+    return Object.values(townVisualStates).filter(
+      (townVisualState) => townVisualState.isCaptureProtected,
+    ).length
+  }
+
+  private emitChange(event: ServerGameEvent) {
     this.revision += 1
     this.persistence.saveSeasonState(this.seasonState)
     this.persistence.saveRevision(this.revision)
     for (const listener of this.listeners) {
-      listener()
+      listener({
+        ...event,
+        revision: this.revision,
+      })
     }
   }
 
@@ -62,7 +79,19 @@ export class TerritoryGameStore {
     const nextSeasonState = ensureActiveSeasonState(this.seasonState, now)
     if (nextSeasonState !== this.seasonState) {
       this.seasonState = nextSeasonState
-      this.emitChange()
+      const seasonWindow = getSeasonWindow(now)
+      const seasonResetEvent: ServerSeasonResetEvent = {
+        type: "season-reset",
+        capturedTownCount: this.getCapturedTownCountForSeason(this.seasonState, now),
+        contestedTownCount: this.getContestedTownCount(this.seasonState),
+        controlCounts: getRegionControlCountsFromSeason(this.seasonState),
+        revision: this.revision,
+        season: this.seasonState,
+        seasonLabel: `Week ${seasonWindow.seasonNumber}`,
+        seasonTimeRemaining: getSeasonTimeRemaining(this.seasonState, now),
+        serverTime: now,
+      }
+      this.emitChange(seasonResetEvent)
     }
   }
 
@@ -113,9 +142,7 @@ export class TerritoryGameStore {
     const seasonWindow = getSeasonWindow(now)
 
     const snapshot: ServerGameSnapshot = {
-      contestedTownCount: Object.values(this.seasonState.towns).filter(
-        (town) => town.isContested,
-      ).length,
+      contestedTownCount: this.getContestedTownCount(this.seasonState),
       controlCounts: getRegionControlCountsFromSeason(this.seasonState),
       nextActionPointIn: getTimeUntilNextActionPoint(player, now),
       player,
@@ -167,7 +194,23 @@ export class TerritoryGameStore {
     this.playerStates.set(playerId, nextPlayerState)
     this.persistence.savePlayerState(playerId, nextPlayerState)
     this.seasonState = actionResult.season
-    this.emitChange()
+    const worldUpdateEvent: ServerWorldUpdateEvent = {
+      type: "world-update",
+      changedTowns: actionResult.town
+        ? [
+            {
+              town: actionResult.town,
+              townName: action.townName,
+            },
+          ]
+        : [],
+      capturedTownCount: this.getCapturedTownCountForSeason(this.seasonState, now),
+      contestedTownCount: this.getContestedTownCount(this.seasonState),
+      controlCounts: getRegionControlCountsFromSeason(this.seasonState),
+      revision: this.revision,
+      serverTime: now,
+    }
+    this.emitChange(worldUpdateEvent)
 
     return {
       ok: true,
