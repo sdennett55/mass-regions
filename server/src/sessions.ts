@@ -146,7 +146,7 @@ export class AnonymousSessionManager {
     });
   }
 
-  resolveSession(request: Request, response: Response, now = Date.now()) {
+  resolveExistingSession(request: Request, response: Response) {
     const cookies = parseCookieHeader(request.headers.cookie);
     const verifiedSessionId =
       verifySignedSessionId(getQueryStringValue(request.query.sessionToken)) ??
@@ -159,6 +159,16 @@ export class AnonymousSessionManager {
         sessionId: verifiedSessionId,
         sessionToken: signSessionId(verifiedSessionId),
       };
+    }
+
+    return null;
+  }
+
+  resolveSession(request: Request, response: Response, now = Date.now()) {
+    const existingSession = this.resolveExistingSession(request, response);
+
+    if (existingSession) {
+      return existingSession;
     }
 
     const sessionId = this.issueSessionIdForFingerprint(request, now);

@@ -132,7 +132,20 @@ app.post(
       return
     }
 
-    const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
+    const resolvedSession = sessionManager.resolveExistingSession(request, response)
+
+    if (!resolvedSession) {
+      const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
+      response.status(409).json({
+        error: "Session syncing. Please try again.",
+        ok: false,
+        sessionToken,
+        snapshot: store.getSnapshot(sessionId),
+      })
+      return
+    }
+
+    const { sessionId, sessionToken } = resolvedSession
     const result = store.applyPlayerAction(sessionId, action)
     response.status(result.ok ? 200 : 409).json({
       ...result,
@@ -142,7 +155,14 @@ app.post(
 )
 
 app.get("/api/events", eventLimiter, (request, response) => {
-  const { sessionId } = sessionManager.resolveSession(request, response)
+  const resolvedSession = sessionManager.resolveExistingSession(request, response)
+
+  if (!resolvedSession) {
+    response.status(409).end()
+    return
+  }
+
+  const { sessionId } = resolvedSession
 
   response.setHeader("Cache-Control", "no-cache, no-transform")
   response.setHeader("Connection", "keep-alive")

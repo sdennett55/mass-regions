@@ -208,6 +208,7 @@ export function useTerritoryGame() {
     createInitialServerSnapshot(Date.now()),
   );
   const [hasLiveSnapshot, setHasLiveSnapshot] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [clockAnchor, setClockAnchor] = useState<ServerClockAnchor>(() => {
     const now = Date.now();
     return {
@@ -230,6 +231,7 @@ export function useTerritoryGame() {
   const refreshInFlightRef = useRef(false);
   const clockAnchorRef = useRef(clockAnchor);
   const snapshotRef = useRef(snapshot);
+  const sessionTokenRef = useRef<string | null>(sessionToken);
 
   useEffect(() => {
     clockAnchorRef.current = clockAnchor;
@@ -238,6 +240,10 @@ export function useTerritoryGame() {
   useEffect(() => {
     snapshotRef.current = snapshot;
   }, [snapshot]);
+
+  useEffect(() => {
+    sessionTokenRef.current = sessionToken;
+  }, [sessionToken]);
 
   const resumeAudioContext = useCallback(async () => {
     const audioContext = audioContextRef.current;
@@ -364,7 +370,12 @@ export function useTerritoryGame() {
       refreshInFlightRef.current = true;
 
       try {
-        const nextSnapshot = await fetchServerSnapshot(options?.signal);
+        const { sessionToken: nextSessionToken, snapshot: nextSnapshot } =
+          await fetchServerSnapshot(
+            options?.signal,
+            sessionTokenRef.current,
+          );
+        setSessionToken(nextSessionToken ?? null);
         applySnapshot(nextSnapshot);
       } catch (error) {
         if (!isAbortError(error) && !options?.suppressError) {
@@ -392,11 +403,11 @@ export function useTerritoryGame() {
   }, [refreshSnapshot]);
 
   useEffect(() => {
-    if (!hasLiveSnapshot) {
+    if (!hasLiveSnapshot || !sessionToken) {
       return;
     }
 
-    const eventSource = openServerEvents();
+    const eventSource = openServerEvents(sessionToken);
 
     const handleSnapshot = (event: Event) => {
       try {
@@ -431,15 +442,22 @@ export function useTerritoryGame() {
       }
     };
 
+    const handleError = () => {
+      eventSource.close();
+      void refreshSnapshot({ suppressError: true });
+    };
+
     eventSource.addEventListener("snapshot", handleSnapshot);
     eventSource.addEventListener("heartbeat", handleHeartbeat);
+    eventSource.addEventListener("error", handleError);
 
     return () => {
       eventSource.removeEventListener("snapshot", handleSnapshot);
       eventSource.removeEventListener("heartbeat", handleHeartbeat);
+      eventSource.removeEventListener("error", handleError);
       eventSource.close();
     };
-  }, [applySnapshot, hasLiveSnapshot]);
+  }, [applySnapshot, hasLiveSnapshot, refreshSnapshot, sessionToken]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -555,7 +573,10 @@ export function useTerritoryGame() {
       const previousTown = snapshotRef.current.season.towns[action.townName];
 
       try {
-        const result = await postServerAction(action);
+        const result = await postServerAction(action, sessionTokenRef.current);
+        if (result.sessionToken) {
+          setSessionToken(result.sessionToken);
+        }
         applySnapshot(result.snapshot);
 
         if (!result.ok) {

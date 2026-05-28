@@ -41,6 +41,7 @@ function getGameServerBaseUrl() {
 function buildGameServerUrl(
   path: string,
   searchParams?: Record<string, string>,
+  sessionTokenOverride?: string | null,
 ) {
   const baseUrl = `${getGameServerBaseUrl()}/`;
   const normalizedPath = path.replace(/^\/+/, "");
@@ -52,7 +53,7 @@ function buildGameServerUrl(
     }
   }
 
-  const sessionToken = getStoredSessionToken();
+  const sessionToken = sessionTokenOverride ?? getStoredSessionToken();
   if (sessionToken) {
     url.searchParams.set(SESSION_TOKEN_QUERY_PARAM, sessionToken);
   }
@@ -125,9 +126,16 @@ async function parseJsonResponse<T>(response: Response) {
   return data as T;
 }
 
-export async function fetchServerSnapshot(signal?: AbortSignal) {
+export async function fetchServerSnapshot(
+  signal?: AbortSignal,
+  sessionTokenOverride?: string | null,
+) {
   const response = await fetch(
-    buildGameServerUrl("api/state", getDevStateRequestSearchParams()).toString(),
+    buildGameServerUrl(
+      "api/state",
+      getDevStateRequestSearchParams(),
+      sessionTokenOverride,
+    ).toString(),
     {
     credentials: "include",
     headers: {
@@ -139,11 +147,16 @@ export async function fetchServerSnapshot(signal?: AbortSignal) {
 
   const data = await parseJsonResponse<ServerStateResponse>(response);
   persistSessionToken(data.sessionToken);
-  return data.snapshot;
+  return data;
 }
 
-export async function postServerAction(action: PlayerAction) {
-  const response = await fetch(buildGameServerUrl("api/actions").toString(), {
+export async function postServerAction(
+  action: PlayerAction,
+  sessionTokenOverride?: string | null,
+) {
+  const response = await fetch(
+    buildGameServerUrl("api/actions", undefined, sessionTokenOverride).toString(),
+    {
     body: JSON.stringify({
       action,
     }),
@@ -152,17 +165,21 @@ export async function postServerAction(action: PlayerAction) {
       "Content-Type": "application/json",
     },
     method: "POST",
-  });
+    },
+  );
 
   const data = await parseJsonResponse<ServerActionResponse>(response);
   persistSessionToken(data.sessionToken);
   return data;
 }
 
-export function openServerEvents() {
-  return new EventSource(buildGameServerUrl("api/events").toString(), {
+export function openServerEvents(sessionTokenOverride?: string | null) {
+  return new EventSource(
+    buildGameServerUrl("api/events", undefined, sessionTokenOverride).toString(),
+    {
     withCredentials: true,
-  });
+    },
+  );
 }
 
 export function createInitialServerSnapshot(now = Date.now()): ServerGameSnapshot {
