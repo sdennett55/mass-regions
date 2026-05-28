@@ -268,9 +268,14 @@ export function spendPlayerActionPoints(
     return null
   }
 
+  const nextLastRegeneratedAt =
+    resolvedPlayer.actionPoints >= PLAYER_MAX_ACTION_POINTS
+      ? now
+      : resolvedPlayer.lastRegeneratedAt
+
   return {
     actionPoints: resolvedPlayer.actionPoints - amount,
-    lastRegeneratedAt: resolvedPlayer.lastRegeneratedAt,
+    lastRegeneratedAt: nextLastRegeneratedAt,
   }
 }
 
