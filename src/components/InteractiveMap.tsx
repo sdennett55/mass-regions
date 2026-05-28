@@ -30,6 +30,7 @@ import {
 } from "../game/constants";
 import { useTerritoryGame } from "../game/useTerritoryGame";
 import type { TownBattleState } from "../game/types";
+import AdminStatsPanel from "./AdminStatsPanel";
 import ActivityFeed from "./ActivityFeed";
 import GameHud from "./GameHud";
 import MassachusettsMap from "./Map";
@@ -51,6 +52,7 @@ const TOUCH_HOVER_BLOCK_MS = 800;
 const RENDER_BUFFER_RATIO = 0.18;
 const REGIONS_MODE_QUERY_VALUE = "regions";
 const COMPACT_HUD_BREAKPOINT_PX = 900;
+const ADMIN_PANEL_QUERY_PARAM = "admin";
 
 type Viewport = {
   width: number;
@@ -340,6 +342,27 @@ function loadInitialMapSettings() {
     battleMode: battleModeOverride,
     showTownLabels: storedSettings?.showTownLabels ?? true,
   };
+}
+
+function isAdminPanelEnabledFromUrl() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  try {
+    const adminParam = new URLSearchParams(window.location.search).get(
+      ADMIN_PANEL_QUERY_PARAM,
+    );
+
+    if (!adminParam) {
+      return false;
+    }
+
+    const normalizedValue = adminParam.trim().toLowerCase();
+    return normalizedValue !== "" && normalizedValue !== "0" && normalizedValue !== "false";
+  } catch {
+    return false;
+  }
 }
 
 function syncBattleModeUrl(isBattleMode: boolean) {
@@ -1332,6 +1355,7 @@ function InteractiveMap() {
     !camera || !defaultCamera || areCamerasEqual(camera, defaultCamera);
   const isMobileViewport = !!viewport && viewport.width < 640;
   const isCompactHud = !!viewport && viewport.width < COMPACT_HUD_BREAKPOINT_PX;
+  const showAdminPanel = isAdminPanelEnabledFromUrl();
   const hasTouchInput = isTouchCapableDevice();
   const showDismissVeil = hasTouchInput;
   const shouldHideSelectedTownPanel = isLegendOpen && isMobileViewport;
@@ -1579,6 +1603,18 @@ function InteractiveMap() {
           </button>
         ) : null}
       </div>
+
+      {showAdminPanel ? (
+        <div
+          className="pointer-events-none absolute z-10"
+          style={{
+            left: "calc(env(safe-area-inset-left, 0px) + 0.75rem)",
+            top: "calc(env(safe-area-inset-top, 0px) + 3.75rem)",
+          }}
+        >
+          <AdminStatsPanel />
+        </div>
+      ) : null}
 
       {isLegendOpen ? (
         <aside

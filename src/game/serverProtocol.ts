@@ -70,3 +70,29 @@ export type ServerStateResponse = {
   sessionToken?: string;
   snapshot: ServerGameSnapshot;
 };
+
+export type ServerStatsSnapshot = {
+  actions: {
+    averageLatencyMs: number;
+    lastMinute: number;
+    rejected: number;
+    sessionSyncErrors: number;
+    successful: number;
+    total: number;
+  };
+  memory: {
+    heapUsedMb: number;
+    rssMb: number;
+  };
+  requests: {
+    stateLastMinute: number;
+    stateTotal: number;
+  };
+  sse: {
+    activeConnections: number;
+    connectionAttemptsLastMinute: number;
+    peakConnections: number;
+    totalConnections: number;
+  };
+  uptimeSeconds: number;
+};

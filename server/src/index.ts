@@ -8,6 +8,7 @@ import type { PlayerAction } from "../../src/game/types.ts"
 import { serverConfig } from "./config.ts"
 import { TerritoryGameStore } from "./gameStore.ts"
 import { ServerPersistence } from "./persistence.ts"
+import { RuntimeStatsTracker } from "./runtimeStats.ts"
 import { AnonymousSessionManager } from "./sessions.ts"
 import type {
   ServerActionRequest,
@@ -19,6 +20,7 @@ const app = express()
 app.set("trust proxy", 3)
 const persistence = new ServerPersistence(serverConfig.databasePath)
 const store = new TerritoryGameStore(persistence)
+const runtimeStats = new RuntimeStatsTracker()
 const sessionManager = new AnonymousSessionManager(persistence)
 
 const stateLimiter = rateLimit({
@@ -43,6 +45,14 @@ const eventLimiter = rateLimit({
   standardHeaders: "draft-8",
   windowMs: 60 * 1000,
   limit: 30,
+})
+
+const statsLimiter = rateLimit({
+  legacyHeaders: false,
+  message: { error: "Too many stats requests. Please slow down." },
+  standardHeaders: "draft-8",
+  windowMs: 60 * 1000,
+  limit: 60,
 })
 
 app.use(
@@ -97,10 +107,15 @@ app.get("/health", (_request, response) => {
   })
 })
 
+app.get("/api/stats", statsLimiter, (_request, response) => {
+  response.json(runtimeStats.getSnapshot())
+})
+
 app.get(
   "/api/state",
   stateLimiter,
   (request, response: Response<ServerStateResponse | { error: string }>) => {
+    runtimeStats.recordStateRequest()
     const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
     const shouldRefillActionPoints =
       !serverConfig.isProduction &&
@@ -126,9 +141,15 @@ app.post(
   "/api/actions",
   actionLimiter,
   (request: Request, response) => {
+    const startedAt = performance.now()
     const { action } = (request.body ?? {}) as Partial<ServerActionRequest>
 
     if (!isPlayerAction(action)) {
+      runtimeStats.recordAction({
+        durationMs: performance.now() - startedAt,
+        ok: false,
+        timestamp: Date.now(),
+      })
       response.status(400).json({ error: "Invalid action payload." })
       return
     }
@@ -136,7 +157,13 @@ app.post(
     const resolvedSession = sessionManager.resolveExistingSession(request, response)
 
     if (!resolvedSession) {
+      runtimeStats.recordSessionSyncError()
       const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
+      runtimeStats.recordAction({
+        durationMs: performance.now() - startedAt,
+        ok: false,
+        timestamp: Date.now(),
+      })
       response.status(409).json({
         error: "Session syncing. Please try again.",
         ok: false,
@@ -148,6 +175,11 @@ app.post(
 
     const { sessionId, sessionToken } = resolvedSession
     const result = store.applyPlayerAction(sessionId, action)
+    runtimeStats.recordAction({
+      durationMs: performance.now() - startedAt,
+      ok: result.ok,
+      timestamp: Date.now(),
+    })
     response.status(result.ok ? 200 : 409).json({
       ...result,
       sessionToken,
@@ -164,6 +196,7 @@ app.get("/api/events", eventLimiter, (request, response) => {
   }
 
   const { sessionId } = resolvedSession
+  runtimeStats.recordSseConnectionOpened()
 
   response.setHeader("Cache-Control", "no-cache, no-transform")
   response.setHeader("Connection", "keep-alive")
@@ -186,11 +219,17 @@ app.get("/api/events", eventLimiter, (request, response) => {
   }, serverConfig.sseHeartbeatMs)
 
   request.on("close", () => {
+    runtimeStats.recordSseConnectionClosed()
     clearInterval(heartbeatId)
     unsubscribe()
     response.end()
   })
 })
+
+const statsSummaryIntervalId = setInterval(() => {
+  console.log(runtimeStats.formatSummary())
+}, 60 * 1000)
+statsSummaryIntervalId.unref()
 
 app.listen(serverConfig.port, () => {
   console.log(

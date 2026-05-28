@@ -12,6 +12,7 @@ import type { PlayerAction } from "./types";
 import type {
   ServerActionResponse,
   ServerGameSnapshot,
+  ServerStatsSnapshot,
   ServerStateResponse,
 } from "./serverProtocol";
 
@@ -180,6 +181,18 @@ export function openServerEvents(sessionTokenOverride?: string | null) {
     withCredentials: true,
     },
   );
+}
+
+export async function fetchServerStats(signal?: AbortSignal) {
+  const response = await fetch(buildGameServerUrl("api/stats").toString(), {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+    signal,
+  });
+
+  return parseJsonResponse<ServerStatsSnapshot>(response);
 }
 
 export function createInitialServerSnapshot(now = Date.now()): ServerGameSnapshot {

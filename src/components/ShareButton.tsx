@@ -11,6 +11,7 @@ const SHARE_FEEDBACK_RESET_MS = 2200;
 const SHARE_TITLE = "YOUR REGION NEEDS YOU | Border Beef";
 const SHARE_TEXT =
   "Massachusetts is at war. Attack, capture, and defend territories to help decide which region controls the state this week.";
+const ADMIN_PANEL_QUERY_PARAM = "admin";
 
 async function copyTextToClipboard(text: string) {
   if (
@@ -43,6 +44,20 @@ async function copyTextToClipboard(text: string) {
     }
   } finally {
     document.body.removeChild(textArea);
+  }
+}
+
+function getShareUrl() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const shareUrl = new URL(window.location.href);
+    shareUrl.searchParams.delete(ADMIN_PANEL_QUERY_PARAM);
+    return shareUrl.toString();
+  } catch {
+    return window.location.href;
   }
 }
 
@@ -96,7 +111,7 @@ function ShareButton() {
       return;
     }
 
-    const shareUrl = window.location.href;
+    const shareUrl = getShareUrl();
 
     try {
       if (
