@@ -59,6 +59,7 @@ const statsLimiter = rateLimit({
 
 app.use(
   cors({
+    allowedHeaders: ["Content-Type", "X-Admin-Token", "X-Session-Token"],
     credentials: true,
     origin(origin, callback) {
       callback(
@@ -163,7 +164,7 @@ app.get(
   stateLimiter,
   (request, response: Response<ServerStateResponse | { error: string }>) => {
     runtimeStats.recordStateRequest()
-    const { sessionId } = sessionManager.resolveSession(request, response)
+    const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
     const shouldRefillActionPoints =
       !serverConfig.isProduction &&
       (isTruthyQueryParam(request.query.refillActionPoints) ||
@@ -171,12 +172,14 @@ app.get(
 
     if (shouldRefillActionPoints) {
       response.json({
+        sessionToken,
         snapshot: store.refillPlayerActionPoints(sessionId),
       })
       return
     }
 
     response.json({
+      sessionToken,
       snapshot: store.getSnapshot(sessionId),
     })
   },
@@ -203,7 +206,7 @@ app.post(
 
     if (!resolvedSession) {
       runtimeStats.recordSessionSyncError()
-      const { sessionId } = sessionManager.resolveSession(request, response)
+      const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
       runtimeStats.recordAction({
         durationMs: performance.now() - startedAt,
         ok: false,
@@ -212,12 +215,13 @@ app.post(
       response.status(409).json({
         error: "Session syncing. Please try again.",
         ok: false,
+        sessionToken,
         snapshot: store.getSnapshot(sessionId),
       })
       return
     }
 
-    const { sessionId } = resolvedSession
+    const { sessionId, sessionToken } = resolvedSession
     const result = store.applyPlayerAction(sessionId, action)
     runtimeStats.recordAction({
       durationMs: performance.now() - startedAt,
@@ -226,6 +230,7 @@ app.post(
     })
     response.status(result.ok ? 200 : 409).json({
       ...result,
+      sessionToken,
     })
   },
 )

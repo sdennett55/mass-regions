@@ -20,6 +20,9 @@ const DEFAULT_DEV_SERVER_URL = "http://localhost:4000";
 const REFILL_ACTION_POINTS_QUERY_PARAM = "refillActionPoints";
 const LEGACY_REFILL_ACTION_POINTS_QUERY_PARAM = "refillInfluence";
 const ADMIN_STATS_TOKEN_HEADER = "x-admin-token";
+const SESSION_TOKEN_HEADER = "x-session-token";
+const SESSION_TOKEN_QUERY_PARAM = "sessionToken";
+const SESSION_TOKEN_STORAGE_KEY = "mass-regions:server-session-token";
 
 function trimTrailingSlashes(value: string) {
   return value.replace(/\/+$/, "");
@@ -41,6 +44,7 @@ function getGameServerBaseUrl() {
 function buildGameServerUrl(
   path: string,
   searchParams?: Record<string, string>,
+  sessionTokenOverride?: string | null,
 ) {
   const baseUrl = `${getGameServerBaseUrl()}/`;
   const normalizedPath = path.replace(/^\/+/, "");
@@ -52,7 +56,35 @@ function buildGameServerUrl(
     }
   }
 
+  if (sessionTokenOverride) {
+    url.searchParams.set(SESSION_TOKEN_QUERY_PARAM, sessionTokenOverride);
+  }
+
   return url;
+}
+
+function getStoredSessionToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.sessionStorage.getItem(SESSION_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistSessionToken(sessionToken: string | undefined) {
+  if (!sessionToken || typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(SESSION_TOKEN_STORAGE_KEY, sessionToken);
+  } catch {
+    // Ignore storage failures so the live session can still continue in-memory.
+  }
 }
 
 function getDevStateRequestSearchParams() {
@@ -98,24 +130,42 @@ async function parseJsonResponse<T>(response: Response) {
 
 export async function fetchServerSnapshot(
   signal?: AbortSignal,
+  sessionTokenOverride?: string | null,
 ) {
+  const headers: HeadersInit = {
+    Accept: "application/json",
+  };
+  const sessionToken = sessionTokenOverride ?? getStoredSessionToken();
+  if (sessionToken) {
+    headers[SESSION_TOKEN_HEADER] = sessionToken;
+  }
+
   const response = await fetch(
     buildGameServerUrl("api/state", getDevStateRequestSearchParams()).toString(),
     {
     credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
+    headers,
     signal,
   },
   );
 
-  return parseJsonResponse<ServerStateResponse>(response);
+  const data = await parseJsonResponse<ServerStateResponse>(response);
+  persistSessionToken(data.sessionToken);
+  return data;
 }
 
 export async function postServerAction(
   action: PlayerAction,
+  sessionTokenOverride?: string | null,
 ) {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+  const sessionToken = sessionTokenOverride ?? getStoredSessionToken();
+  if (sessionToken) {
+    headers[SESSION_TOKEN_HEADER] = sessionToken;
+  }
+
   const response = await fetch(
     buildGameServerUrl("api/actions").toString(),
     {
@@ -123,19 +173,20 @@ export async function postServerAction(
       action,
     }),
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     method: "POST",
     },
   );
 
-  return parseJsonResponse<ServerActionResponse>(response);
+  const data = await parseJsonResponse<ServerActionResponse>(response);
+  persistSessionToken(data.sessionToken);
+  return data;
 }
 
-export function openServerEvents() {
+export function openServerEvents(sessionTokenOverride?: string | null) {
+  const sessionToken = sessionTokenOverride ?? getStoredSessionToken();
   return new EventSource(
-    buildGameServerUrl("api/events").toString(),
+    buildGameServerUrl("api/events", undefined, sessionToken).toString(),
     {
     withCredentials: true,
     },

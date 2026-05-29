@@ -3,6 +3,8 @@ import type { Request, Response } from "express";
 
 import { serverConfig } from "./config.ts";
 
+const SESSION_TOKEN_HEADER = "x-session-token";
+
 function parseCookieHeader(cookieHeader: string | undefined) {
   const cookies = new Map<string, string>();
 
@@ -20,6 +22,10 @@ function parseCookieHeader(cookieHeader: string | undefined) {
   }
 
   return cookies;
+}
+
+function getQueryStringValue(value: unknown) {
+  return typeof value === "string" ? value : undefined;
 }
 
 function signSessionId(sessionId: string) {
@@ -71,15 +77,17 @@ export class AnonymousSessionManager {
 
   resolveExistingSession(request: Request, response: Response) {
     const cookies = parseCookieHeader(request.headers.cookie);
-    const verifiedSessionId = verifySignedSessionId(
-      cookies.get(serverConfig.sessionCookieName),
-    );
+    const verifiedSessionId =
+      verifySignedSessionId(request.get(SESSION_TOKEN_HEADER)) ??
+      verifySignedSessionId(getQueryStringValue(request.query.sessionToken)) ??
+      verifySignedSessionId(cookies.get(serverConfig.sessionCookieName));
 
     if (verifiedSessionId) {
       this.setSessionCookie(response, verifiedSessionId);
       return {
         isNewSession: false,
         sessionId: verifiedSessionId,
+        sessionToken: signSessionId(verifiedSessionId),
       };
     }
 
@@ -99,6 +107,7 @@ export class AnonymousSessionManager {
     return {
       isNewSession: true,
       sessionId,
+      sessionToken: signSessionId(sessionId),
     };
   }
 }
