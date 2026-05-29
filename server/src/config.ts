@@ -103,6 +103,7 @@ function createAllowedOriginChecker(configuredOrigins: string[]) {
 
 const allowedOrigins = parseOrigins(process.env.CLIENT_ORIGIN)
 const isProduction = process.env.NODE_ENV === "production"
+const adminStatsToken = process.env.ADMIN_STATS_TOKEN?.trim() || null
 const sessionSecret =
   process.env.SESSION_SECRET?.trim() || randomBytes(32).toString("hex")
 
@@ -112,6 +113,7 @@ if (isProduction && !process.env.SESSION_SECRET?.trim()) {
 
 export const serverConfig = {
   allowedOrigins,
+  adminStatsToken,
   isAllowedOrigin: createAllowedOriginChecker(allowedOrigins),
   isProduction,
   port: parsePort(process.env.PORT),

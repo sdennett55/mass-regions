@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto"
+
 import cors from "cors"
 import express from "express"
 import type { Request, Response } from "express"
@@ -21,7 +23,7 @@ app.set("trust proxy", 3)
 const persistence = new ServerPersistence(serverConfig.databasePath)
 const store = new TerritoryGameStore(persistence)
 const runtimeStats = new RuntimeStatsTracker()
-const sessionManager = new AnonymousSessionManager(persistence)
+const sessionManager = new AnonymousSessionManager()
 
 const stateLimiter = rateLimit({
   legacyHeaders: false,
@@ -68,7 +70,42 @@ app.use(
     },
   }),
 )
+app.use((_request, response, next) => {
+  response.setHeader("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+  response.setHeader("Referrer-Policy", "same-origin")
+  response.setHeader("X-Content-Type-Options", "nosniff")
+  response.setHeader("X-Frame-Options", "DENY")
+
+  if (serverConfig.isProduction) {
+    response.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains",
+    )
+  }
+
+  next()
+})
 app.use(express.json())
+
+function hasValidAdminStatsToken(request: Request) {
+  const configuredToken = serverConfig.adminStatsToken
+  if (!configuredToken) {
+    return false
+  }
+
+  const providedToken = request.get("x-admin-token")?.trim()
+  if (!providedToken) {
+    return false
+  }
+
+  const providedBuffer = Buffer.from(providedToken)
+  const configuredBuffer = Buffer.from(configuredToken)
+
+  return (
+    providedBuffer.length === configuredBuffer.length &&
+    timingSafeEqual(providedBuffer, configuredBuffer)
+  )
+}
 
 function isTruthyQueryParam(value: unknown) {
   if (typeof value !== "string") {
@@ -107,7 +144,17 @@ app.get("/health", (_request, response) => {
   })
 })
 
-app.get("/api/stats", statsLimiter, (_request, response) => {
+app.get("/api/stats", statsLimiter, (request, response) => {
+  if (!serverConfig.adminStatsToken) {
+    response.status(404).json({ error: "Admin stats are unavailable." })
+    return
+  }
+
+  if (!hasValidAdminStatsToken(request)) {
+    response.status(401).json({ error: "Admin token required." })
+    return
+  }
+
   response.json(runtimeStats.getSnapshot())
 })
 
@@ -116,7 +163,7 @@ app.get(
   stateLimiter,
   (request, response: Response<ServerStateResponse | { error: string }>) => {
     runtimeStats.recordStateRequest()
-    const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
+    const { sessionId } = sessionManager.resolveSession(request, response)
     const shouldRefillActionPoints =
       !serverConfig.isProduction &&
       (isTruthyQueryParam(request.query.refillActionPoints) ||
@@ -124,14 +171,12 @@ app.get(
 
     if (shouldRefillActionPoints) {
       response.json({
-        sessionToken,
         snapshot: store.refillPlayerActionPoints(sessionId),
       })
       return
     }
 
     response.json({
-      sessionToken,
       snapshot: store.getSnapshot(sessionId),
     })
   },
@@ -158,7 +203,7 @@ app.post(
 
     if (!resolvedSession) {
       runtimeStats.recordSessionSyncError()
-      const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
+      const { sessionId } = sessionManager.resolveSession(request, response)
       runtimeStats.recordAction({
         durationMs: performance.now() - startedAt,
         ok: false,
@@ -167,13 +212,12 @@ app.post(
       response.status(409).json({
         error: "Session syncing. Please try again.",
         ok: false,
-        sessionToken,
         snapshot: store.getSnapshot(sessionId),
       })
       return
     }
 
-    const { sessionId, sessionToken } = resolvedSession
+    const { sessionId } = resolvedSession
     const result = store.applyPlayerAction(sessionId, action)
     runtimeStats.recordAction({
       durationMs: performance.now() - startedAt,
@@ -182,7 +226,6 @@ app.post(
     })
     response.status(result.ok ? 200 : 409).json({
       ...result,
-      sessionToken,
     })
   },
 )

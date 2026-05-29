@@ -1,4 +1,5 @@
 import {
+  type FormEvent as ReactFormEvent,
   type MouseEvent as ReactMouseEvent,
   useEffect,
   useState,
@@ -10,6 +11,44 @@ import type { ServerStatsSnapshot } from "../game/serverProtocol";
 
 const ADMIN_STATS_POLL_INTERVAL_MS = 5000;
 const MOBILE_BREAKPOINT_PX = 640;
+const ADMIN_STATS_TOKEN_STORAGE_KEY = "mass-regions:admin-stats-token";
+
+function loadStoredAdminStatsToken() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const token = window.sessionStorage.getItem(ADMIN_STATS_TOKEN_STORAGE_KEY);
+    return token?.trim() ? token : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistAdminStatsToken(token: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(ADMIN_STATS_TOKEN_STORAGE_KEY, token);
+  } catch {
+    // Ignore storage failures so the current tab can still use the token in memory.
+  }
+}
+
+function clearStoredAdminStatsToken() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.sessionStorage.removeItem(ADMIN_STATS_TOKEN_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures so clearing still works for the current tab.
+  }
+}
 
 function formatUptime(totalSeconds: number) {
   const days = Math.floor(totalSeconds / 86400);
@@ -70,6 +109,10 @@ function StatCard({ label, tone = "neutral", value }: StatCardProps) {
 
 function AdminStatsPanel() {
   const [stats, setStats] = useState<ServerStatsSnapshot | null>(null);
+  const [adminStatsToken, setAdminStatsToken] = useState<string | null>(() =>
+    loadStoredAdminStatsToken(),
+  );
+  const [adminStatsTokenDraft, setAdminStatsTokenDraft] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -81,7 +124,12 @@ function AdminStatsPanel() {
   });
 
   useEffect(() => {
+    if (!adminStatsToken) {
+      return;
+    }
+
     let isCancelled = false;
+    let shouldScheduleNextPoll = true;
     let pollTimeoutId: number | null = null;
     let activeController: AbortController | null = null;
 
@@ -97,7 +145,10 @@ function AdminStatsPanel() {
       activeController = controller;
 
       try {
-        const nextStats = await fetchServerStats(controller.signal);
+        const nextStats = await fetchServerStats(
+          controller.signal,
+          adminStatsToken,
+        );
         if (isCancelled) {
           return;
         }
@@ -113,11 +164,24 @@ function AdminStatsPanel() {
           return;
         }
 
+        if (
+          error instanceof Error &&
+          error.message === "Admin token required."
+        ) {
+          shouldScheduleNextPoll = false;
+          clearStoredAdminStatsToken();
+          setAdminStatsToken(null);
+          setStats(null);
+          setLastUpdatedAt(null);
+          setErrorMessage("Enter a valid admin token.");
+          return;
+        }
+
         setErrorMessage(
           error instanceof Error ? error.message : "Unable to load stats.",
         );
       } finally {
-        if (!isCancelled) {
+        if (!isCancelled && shouldScheduleNextPoll) {
           scheduleNextPoll();
         }
       }
@@ -133,11 +197,40 @@ function AdminStatsPanel() {
         window.clearTimeout(pollTimeoutId);
       }
     };
-  }, []);
+  }, [adminStatsToken]);
 
   const handleToggleClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
     setIsCollapsed((currentState) => !currentState);
+  };
+
+  const handleAdminTokenSubmit = (
+    event:
+      | ReactMouseEvent<HTMLButtonElement>
+      | ReactFormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const trimmedToken = adminStatsTokenDraft.trim();
+    if (!trimmedToken) {
+      setErrorMessage("Enter your admin token.");
+      return;
+    }
+
+    persistAdminStatsToken(trimmedToken);
+    setAdminStatsToken(trimmedToken);
+    setErrorMessage(null);
+  };
+
+  const handleClearAdminAccess = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    clearStoredAdminStatsToken();
+    setAdminStatsToken(null);
+    setAdminStatsTokenDraft("");
+    setStats(null);
+    setLastUpdatedAt(null);
+    setErrorMessage(null);
   };
 
   const hasWarningState =
@@ -177,13 +270,50 @@ function AdminStatsPanel() {
 
       {isCollapsed ? null : (
         <div className="space-y-3 px-4 py-3">
+          {!adminStatsToken ? (
+            <form
+              className="space-y-3 rounded-2xl bg-white/6 px-3 py-3 ring-1 ring-white/10"
+              data-ui-control="true"
+              onSubmit={handleAdminTokenSubmit}
+            >
+              <div>
+                <p className="text-sm font-semibold text-white">
+                  Admin token required
+                </p>
+                <p className="mt-1 text-xs font-medium text-white/60">
+                  Enter the server token to unlock live stats for this tab.
+                </p>
+              </div>
+
+              <input
+                autoCapitalize="none"
+                autoComplete="off"
+                className="w-full rounded-2xl border border-white/12 bg-slate-950/70 px-3 py-2 text-sm font-medium text-white outline-none placeholder:text-white/35 focus:border-white/30"
+                data-ui-control="true"
+                onChange={(event) => setAdminStatsTokenDraft(event.target.value)}
+                placeholder="Admin token"
+                spellCheck={false}
+                type="password"
+                value={adminStatsTokenDraft}
+              />
+
+              <button
+                className="w-full cursor-pointer rounded-2xl bg-white px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-slate-100"
+                data-ui-control="true"
+                type="submit"
+              >
+                Unlock Stats
+              </button>
+            </form>
+          ) : null}
+
           {errorMessage ? (
             <div className="rounded-2xl border border-amber-300/15 bg-amber-300/10 px-3 py-2 text-sm font-medium text-amber-50">
               {errorMessage}
             </div>
           ) : null}
 
-          {stats ? (
+          {stats && adminStatsToken ? (
             <>
               <div className="grid grid-cols-2 gap-2">
                 <StatCard
@@ -265,12 +395,21 @@ function AdminStatsPanel() {
                   ? "Warnings are non-zero. Worth checking live traffic or recent deploy behavior."
                   : "Polling /api/stats every 5 seconds."}
               </p>
+
+              <button
+                className="w-full cursor-pointer rounded-2xl border border-white/12 bg-white/6 px-3 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+                data-ui-control="true"
+                onClick={handleClearAdminAccess}
+                type="button"
+              >
+                Lock Stats
+              </button>
             </>
-          ) : (
+          ) : adminStatsToken ? (
             <div className="rounded-2xl bg-white/6 px-3 py-3 text-sm font-medium text-white/70 ring-1 ring-white/10">
               Loading stats...
             </div>
-          )}
+          ) : null}
         </div>
       )}
     </aside>
