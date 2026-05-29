@@ -160,32 +160,43 @@ function decodeLoadedAudioBuffer(
 function playBufferedSound(
   audioContext: BrowserAudioContext | null,
   audioBuffer: AudioBuffer | null,
+  onFallback?: () => void,
 ) {
   if (!audioContext || !audioBuffer) {
+    onFallback?.();
     return;
   }
 
   const startPlayback = () => {
-    const source = audioContext.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
-    source.start(0);
+    try {
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   if (audioContext.state === "running") {
-    startPlayback();
+    if (!startPlayback()) {
+      onFallback?.();
+    }
     return;
   }
 
   void audioContext
     .resume()
     .then(() => {
-      if (audioContext.state === "running") {
-        startPlayback();
+      if (audioContext.state === "running" && startPlayback()) {
+        return;
       }
+
+      onFallback?.();
     })
     .catch(() => {
-      // Ignore blocked playback so actions can continue silently.
+      onFallback?.();
     });
 }
 
@@ -310,6 +321,8 @@ export function useTerritoryGame() {
   const snapshotRef = useRef(snapshot);
   const sessionTokenRef = useRef<string | null>(sessionToken);
   const audioDecodePromiseRef = useRef<Promise<void> | null>(null);
+  const audioRecoveryPromiseRef = useRef<Promise<boolean> | null>(null);
+  const audioNeedsForegroundRecoveryRef = useRef(false);
 
   useEffect(() => {
     clockAnchorRef.current = clockAnchor;
@@ -323,10 +336,41 @@ export function useTerritoryGame() {
     sessionTokenRef.current = sessionToken;
   }, [sessionToken]);
 
+  const clearDecodedAudioBuffers = useCallback(() => {
+    attackAudioBufferRef.current = null;
+    captureAudioBufferRef.current = null;
+    defendAudioBufferRef.current = null;
+    audioDecodePromiseRef.current = null;
+  }, []);
+
+  const invalidateAudioContext = useCallback(
+    (closeExisting = false) => {
+      const audioContext = audioContextRef.current;
+      audioContextRef.current = null;
+      clearDecodedAudioBuffers();
+
+      if (closeExisting && audioContext) {
+        void audioContext.close().catch(() => {
+          // Ignore close failures while discarding a stale context.
+        });
+      }
+    },
+    [clearDecodedAudioBuffers],
+  );
+
   const resumeAudioContext = useCallback(async () => {
     const audioContext = audioContextRef.current;
-    if (!audioContext || audioContext.state === "running") {
-      return;
+    if (!audioContext) {
+      return false;
+    }
+
+    if (audioContext.state === "running") {
+      return true;
+    }
+
+    if (audioContext.state === "closed") {
+      invalidateAudioContext();
+      return false;
     }
 
     try {
@@ -334,7 +378,15 @@ export function useTerritoryGame() {
     } catch {
       // Ignore resume failures so interaction can continue silently.
     }
-  }, []);
+
+    const resumedState = audioContextRef.current?.state;
+    if (resumedState === "closed") {
+      invalidateAudioContext();
+      return false;
+    }
+
+    return resumedState === "running";
+  }, [invalidateAudioContext]);
 
   const kickAudioSession = useCallback(async () => {
     const silentKickAudio = silentKickAudioElementRef.current;
@@ -403,21 +455,63 @@ export function useTerritoryGame() {
 
   const initializeAudio = useCallback(async () => {
     let audioContext = audioContextRef.current;
+    if (audioContext?.state === "closed") {
+      invalidateAudioContext();
+      audioContext = null;
+    }
+
     if (!audioContext) {
       audioContext = createAudioContext();
       audioContextRef.current = audioContext;
     }
 
     if (!audioContext) {
-      return;
+      return false;
     }
 
     await Promise.allSettled([resumeAudioContext(), kickAudioSession()]);
+    const isRunning = await resumeAudioContext();
+    const resolvedAudioContext = audioContextRef.current;
 
-    if (audioContext.state === "running") {
-      void decodeReadyAudioBuffers(audioContext);
+    if (!resolvedAudioContext || !isRunning) {
+      return false;
     }
-  }, [decodeReadyAudioBuffers, kickAudioSession, resumeAudioContext]);
+
+    void decodeReadyAudioBuffers(resolvedAudioContext);
+    return true;
+  }, [
+    decodeReadyAudioBuffers,
+    invalidateAudioContext,
+    kickAudioSession,
+    resumeAudioContext,
+  ]);
+
+  const recoverAudioAfterForeground = useCallback(() => {
+    if (!audioContextRef.current) {
+      audioNeedsForegroundRecoveryRef.current = false;
+      return null;
+    }
+
+    if (audioRecoveryPromiseRef.current) {
+      return audioRecoveryPromiseRef.current;
+    }
+
+    const recoveryPromise = initializeAudio()
+      .then((didRecover) => {
+        if (!didRecover) {
+          invalidateAudioContext(true);
+        }
+
+        return didRecover;
+      })
+      .finally(() => {
+        audioNeedsForegroundRecoveryRef.current = false;
+        audioRecoveryPromiseRef.current = null;
+      });
+
+    audioRecoveryPromiseRef.current = recoveryPromise;
+    return recoveryPromise;
+  }, [initializeAudio, invalidateAudioContext]);
 
   useEffect(() => {
     attackAudioElementRef.current = createAudioElement(ATTACK_SOUND_SRC);
@@ -474,14 +568,13 @@ export function useTerritoryGame() {
       window.removeEventListener("pointerdown", warmAudioOnInteraction);
       window.removeEventListener("touchstart", warmAudioOnInteraction);
       window.removeEventListener("keydown", warmAudioOnInteraction);
-      attackAudioBufferRef.current = null;
-      captureAudioBufferRef.current = null;
-      defendAudioBufferRef.current = null;
+      clearDecodedAudioBuffers();
+      audioRecoveryPromiseRef.current = null;
+      audioNeedsForegroundRecoveryRef.current = false;
       attackEncodedAudioRef.current = null;
       captureEncodedAudioRef.current = null;
       defendEncodedAudioRef.current = null;
       audioContextRef.current = null;
-      audioDecodePromiseRef.current = null;
       attackAudioElementRef.current = null;
       captureAudioElementRef.current = null;
       defendAudioElementRef.current = null;
@@ -498,7 +591,7 @@ export function useTerritoryGame() {
         });
       }
     };
-  }, [initializeAudio]);
+  }, [clearDecodedAudioBuffers, initializeAudio]);
 
   const playSound = useCallback(
     (
@@ -506,7 +599,9 @@ export function useTerritoryGame() {
       audioElement: BrowserAudioElement | null,
     ) => {
       if (audioBuffer && audioContextRef.current) {
-        playBufferedSound(audioContextRef.current, audioBuffer);
+        playBufferedSound(audioContextRef.current, audioBuffer, () => {
+          playElementSound(audioElement);
+        });
         return;
       }
 
@@ -735,17 +830,34 @@ export function useTerritoryGame() {
 
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && audioContextRef.current) {
-        void initializeAudio();
+      if (document.visibilityState === "hidden") {
+        audioNeedsForegroundRecoveryRef.current = Boolean(audioContextRef.current);
+        return;
       }
+
+      if (!audioNeedsForegroundRecoveryRef.current) {
+        return;
+      }
+
+      void recoverAudioAfterForeground();
+    };
+
+    const handlePageShow = () => {
+      if (!audioNeedsForegroundRecoveryRef.current) {
+        return;
+      }
+
+      void recoverAudioAfterForeground();
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handlePageShow);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handlePageShow);
     };
-  }, [initializeAudio]);
+  }, [recoverAudioAfterForeground]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -847,7 +959,12 @@ export function useTerritoryGame() {
       setIsActionPending(true);
       const previousTown = snapshotRef.current.season.towns[action.townName];
 
-      void initializeAudio();
+      if (audioNeedsForegroundRecoveryRef.current) {
+        await (audioRecoveryPromiseRef.current ?? recoverAudioAfterForeground());
+      } else {
+        void initializeAudio();
+      }
+
       if (action.type === "defend") {
         playSound(defendAudioBufferRef.current, defendAudioElementRef.current);
       } else {
@@ -903,7 +1020,7 @@ export function useTerritoryGame() {
         setIsActionPending(false);
       }
     },
-    [applySnapshot, initializeAudio, playSound],
+    [applySnapshot, initializeAudio, playSound, recoverAudioAfterForeground],
   );
 
   const getTownBattleState = useCallback(
