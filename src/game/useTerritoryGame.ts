@@ -289,6 +289,7 @@ export function useTerritoryGame() {
     () => Date.now(),
   );
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [isActionPending, setIsActionPending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const actionInFlightRef = useRef(false);
@@ -843,7 +844,15 @@ export function useTerritoryGame() {
       }
 
       actionInFlightRef.current = true;
+      setIsActionPending(true);
       const previousTown = snapshotRef.current.season.towns[action.townName];
+
+      void initializeAudio();
+      if (action.type === "defend") {
+        playSound(defendAudioBufferRef.current, defendAudioElementRef.current);
+      } else {
+        playSound(attackAudioBufferRef.current, attackAudioElementRef.current);
+      }
 
       try {
         const result = await postServerAction(action, sessionTokenRef.current);
@@ -891,9 +900,10 @@ export function useTerritoryGame() {
         );
       } finally {
         actionInFlightRef.current = false;
+        setIsActionPending(false);
       }
     },
-    [applySnapshot, playSound],
+    [applySnapshot, initializeAudio, playSound],
   );
 
   const getTownBattleState = useCallback(
@@ -937,16 +947,13 @@ export function useTerritoryGame() {
     getTownBattleState,
     getTownContext,
     hasLiveSnapshot,
+    isActionPending,
     legendGroups,
     nextActionPointIn,
     onDefend: (townName: TownName) => {
-      void initializeAudio();
-      playSound(defendAudioBufferRef.current, defendAudioElementRef.current);
       return performAction({ townName, type: "defend" });
     },
     onInvade: (townName: TownName, invadingRegion: RegionName) => {
-      void initializeAudio();
-      playSound(attackAudioBufferRef.current, attackAudioElementRef.current);
       return performAction({ invadingRegion, townName, type: "invade" });
     },
     season: snapshot.season,

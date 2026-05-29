@@ -359,7 +359,11 @@ function isAdminPanelEnabledFromUrl() {
     }
 
     const normalizedValue = adminParam.trim().toLowerCase();
-    return normalizedValue !== "" && normalizedValue !== "0" && normalizedValue !== "false";
+    return (
+      normalizedValue !== "" &&
+      normalizedValue !== "0" &&
+      normalizedValue !== "false"
+    );
   } catch {
     return false;
   }
@@ -518,6 +522,7 @@ function InteractiveMap() {
     controlCounts,
     getTownContext,
     hasLiveSnapshot,
+    isActionPending,
     legendGroups,
     nextActionPointIn,
     onDefend,
@@ -1386,7 +1391,7 @@ function InteractiveMap() {
   return (
     <section
       ref={viewportRef}
-      className={`relative h-dvh w-screen touch-none select-none overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.78),transparent_28%),linear-gradient(180deg,#dfe7f1_0%,#d5dee9_100%)] ${
+      className={`relative h-dvh w-screen touch-none select-none overflow-hidden bg-[#dfe7f1] ${
         isDragging ? "cursor-grabbing" : "cursor-grab"
       }`}
       onPointerCancel={finishGesture}
@@ -1724,6 +1729,7 @@ function InteractiveMap() {
           captureProtectionRemaining={
             selectedTownContext.captureProtectionRemaining
           }
+          isActionPending={isActionPending}
           isCaptureProtected={selectedTownContext.isCaptureProtected}
           onClose={() => updateSelectedTownId(null)}
           onDefend={() => onDefend(selectedTownContext.town.townName)}

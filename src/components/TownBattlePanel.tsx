@@ -16,6 +16,7 @@ type TownBattlePanelProps = {
   battleState: TownBattleState;
   captureProtectionRemaining: number;
   actionPoints: number | null;
+  isActionPending: boolean;
   isCaptureProtected: boolean;
   onClose: () => void;
   onDefend: () => void;
@@ -28,6 +29,7 @@ function TownBattlePanel({
   battleState,
   captureProtectionRemaining,
   actionPoints,
+  isActionPending,
   isCaptureProtected,
   onClose,
   onDefend,
@@ -36,7 +38,10 @@ function TownBattlePanel({
   validInvadingRegions,
 }: TownBattlePanelProps) {
   const hasActionPointState = actionPoints !== null;
-  const canAct = hasActionPointState && actionPoints >= PLAYER_ACTION_COST;
+  const hasEnoughActionPoints =
+    hasActionPointState && actionPoints >= PLAYER_ACTION_COST;
+  const canAct =
+    hasEnoughActionPoints && !isActionPending;
   const canDefend = canAct && battleState.isContested && !isCaptureProtected;
   const contestPercent = `${(battleState.captureProgress / CAPTURE_POINTS_TO_CAPTURE) * 100}%`;
   const lockedAttackerRegion =
@@ -50,9 +55,11 @@ function TownBattlePanel({
       : "No invasion to defend";
   const defendStatusLabel = isCaptureProtected
     ? "Protected"
+    : isActionPending
+      ? null
     : !hasActionPointState && battleState.isContested
       ? "Syncing"
-    : !canAct && battleState.isContested
+    : !hasEnoughActionPoints && battleState.isContested
       ? "No points"
       : null;
   const territoryStateLabel = isCaptureProtected
@@ -203,9 +210,11 @@ function TownBattlePanel({
                     canAct && !isCaptureProtected && !isLockedOut;
                   const attackStatusLabel = isCaptureProtected
                     ? "Protected"
+                    : isActionPending
+                      ? null
                     : !hasActionPointState
                       ? "Syncing"
-                    : !canAct
+                    : !hasEnoughActionPoints
                       ? "No points"
                     : isLockedOut
                       ? "Locked"
