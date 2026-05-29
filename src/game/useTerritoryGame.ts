@@ -36,6 +36,8 @@ const MAX_ACTIVITY_EVENTS = 12;
 const ATTACK_SOUND_SRC = "/sounds/attack.mp3";
 const CAPTURE_SOUND_SRC = "/sounds/capture.mp3";
 const DEFEND_SOUND_SRC = "/sounds/defend.mp3";
+const SILENT_AUDIO_SAMPLE_RATE = 8_000;
+const SILENT_AUDIO_SAMPLE_COUNT = SILENT_AUDIO_SAMPLE_RATE / 20;
 type BrowserAudioContext = AudioContext;
 type BrowserAudioElement = HTMLAudioElement;
 
@@ -86,21 +88,6 @@ function createAudioContext() {
   return new AudioContextClass();
 }
 
-function shouldPreferElementAudio() {
-  if (typeof navigator === "undefined") {
-    return false;
-  }
-
-  const userAgent = navigator.userAgent;
-  const platform = navigator.platform;
-  const maxTouchPoints = navigator.maxTouchPoints ?? 0;
-
-  return (
-    /iPad|iPhone|iPod/.test(userAgent) ||
-    (platform === "MacIntel" && maxTouchPoints > 1)
-  );
-}
-
 function createAudioElement(src: string) {
   if (typeof window === "undefined") {
     return null;
@@ -108,14 +95,49 @@ function createAudioElement(src: string) {
 
   const audio = new Audio(src);
   audio.preload = "auto";
+  audio.setAttribute("playsinline", "");
   return audio;
 }
 
-async function decodeAudioBuffer(
-  audioContext: BrowserAudioContext,
-  src: string,
-  signal?: AbortSignal,
-) {
+function createSilentKickAudioElement() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const byteLength = 44 + SILENT_AUDIO_SAMPLE_COUNT * 2;
+  const wavBuffer = new ArrayBuffer(byteLength);
+  const view = new DataView(wavBuffer);
+
+  const writeAscii = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index));
+    }
+  };
+
+  writeAscii(0, "RIFF");
+  view.setUint32(4, byteLength - 8, true);
+  writeAscii(8, "WAVE");
+  writeAscii(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, SILENT_AUDIO_SAMPLE_RATE, true);
+  view.setUint32(28, SILENT_AUDIO_SAMPLE_RATE * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeAscii(36, "data");
+  view.setUint32(40, SILENT_AUDIO_SAMPLE_COUNT * 2, true);
+
+  const objectUrl = URL.createObjectURL(
+    new Blob([wavBuffer], { type: "audio/wav" }),
+  );
+  const audio = new Audio(objectUrl);
+  audio.preload = "auto";
+  audio.setAttribute("playsinline", "");
+  return audio;
+}
+
+async function loadEncodedAudio(src: string, signal?: AbortSignal) {
   const response = await fetch(src, {
     cache: "force-cache",
     signal,
@@ -125,7 +147,13 @@ async function decodeAudioBuffer(
     throw new Error(`Could not load sound: ${src}`);
   }
 
-  const encodedAudio = await response.arrayBuffer();
+  return response.arrayBuffer();
+}
+
+function decodeLoadedAudioBuffer(
+  audioContext: BrowserAudioContext,
+  encodedAudio: ArrayBuffer,
+) {
   return audioContext.decodeAudioData(encodedAudio.slice(0));
 }
 
@@ -268,15 +296,19 @@ export function useTerritoryGame() {
   const attackAudioBufferRef = useRef<AudioBuffer | null>(null);
   const captureAudioBufferRef = useRef<AudioBuffer | null>(null);
   const defendAudioBufferRef = useRef<AudioBuffer | null>(null);
+  const attackEncodedAudioRef = useRef<ArrayBuffer | null>(null);
+  const captureEncodedAudioRef = useRef<ArrayBuffer | null>(null);
+  const defendEncodedAudioRef = useRef<ArrayBuffer | null>(null);
   const attackAudioElementRef = useRef<BrowserAudioElement | null>(null);
   const captureAudioElementRef = useRef<BrowserAudioElement | null>(null);
   const defendAudioElementRef = useRef<BrowserAudioElement | null>(null);
+  const silentKickAudioElementRef = useRef<BrowserAudioElement | null>(null);
   const hasAppliedFirstServerSnapshotRef = useRef(false);
   const refreshInFlightRef = useRef(false);
   const clockAnchorRef = useRef(clockAnchor);
   const snapshotRef = useRef(snapshot);
   const sessionTokenRef = useRef<string | null>(sessionToken);
-  const preferElementAudioRef = useRef(shouldPreferElementAudio());
+  const audioDecodePromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     clockAnchorRef.current = clockAnchor;
@@ -303,100 +335,175 @@ export function useTerritoryGame() {
     }
   }, []);
 
+  const kickAudioSession = useCallback(async () => {
+    const silentKickAudio = silentKickAudioElementRef.current;
+    if (!silentKickAudio) {
+      return;
+    }
+
+    try {
+      silentKickAudio.currentTime = 0;
+      await silentKickAudio.play();
+      silentKickAudio.pause();
+      silentKickAudio.currentTime = 0;
+    } catch {
+      // Ignore kick failures so the main audio path can still try Web Audio.
+    }
+  }, []);
+
+  const decodeReadyAudioBuffers = useCallback(
+    async (audioContext: BrowserAudioContext) => {
+      if (audioDecodePromiseRef.current) {
+        await audioDecodePromiseRef.current;
+        return;
+      }
+
+      audioDecodePromiseRef.current = (async () => {
+        if (!attackAudioBufferRef.current && attackEncodedAudioRef.current) {
+          try {
+            attackAudioBufferRef.current = await decodeLoadedAudioBuffer(
+              audioContext,
+              attackEncodedAudioRef.current,
+            );
+          } catch {
+            attackAudioBufferRef.current = null;
+          }
+        }
+
+        if (!captureAudioBufferRef.current && captureEncodedAudioRef.current) {
+          try {
+            captureAudioBufferRef.current = await decodeLoadedAudioBuffer(
+              audioContext,
+              captureEncodedAudioRef.current,
+            );
+          } catch {
+            captureAudioBufferRef.current = null;
+          }
+        }
+
+        if (!defendAudioBufferRef.current && defendEncodedAudioRef.current) {
+          try {
+            defendAudioBufferRef.current = await decodeLoadedAudioBuffer(
+              audioContext,
+              defendEncodedAudioRef.current,
+            );
+          } catch {
+            defendAudioBufferRef.current = null;
+          }
+        }
+      })().finally(() => {
+        audioDecodePromiseRef.current = null;
+      });
+
+      await audioDecodePromiseRef.current;
+    },
+    [],
+  );
+
+  const initializeAudio = useCallback(async () => {
+    let audioContext = audioContextRef.current;
+    if (!audioContext) {
+      audioContext = createAudioContext();
+      audioContextRef.current = audioContext;
+    }
+
+    if (!audioContext) {
+      return;
+    }
+
+    await Promise.allSettled([resumeAudioContext(), kickAudioSession()]);
+
+    if (audioContext.state === "running") {
+      void decodeReadyAudioBuffers(audioContext);
+    }
+  }, [decodeReadyAudioBuffers, kickAudioSession, resumeAudioContext]);
+
   useEffect(() => {
     attackAudioElementRef.current = createAudioElement(ATTACK_SOUND_SRC);
     captureAudioElementRef.current = createAudioElement(CAPTURE_SOUND_SRC);
     defendAudioElementRef.current = createAudioElement(DEFEND_SOUND_SRC);
+    silentKickAudioElementRef.current = createSilentKickAudioElement();
 
     attackAudioElementRef.current?.load();
     captureAudioElementRef.current?.load();
     defendAudioElementRef.current?.load();
-
-    if (preferElementAudioRef.current) {
-      return () => {
-        attackAudioElementRef.current = null;
-        captureAudioElementRef.current = null;
-        defendAudioElementRef.current = null;
-      };
-    }
-
-    const audioContext = createAudioContext();
-    audioContextRef.current = audioContext;
-    if (!audioContext) {
-      return () => {
-        attackAudioElementRef.current = null;
-        captureAudioElementRef.current = null;
-        defendAudioElementRef.current = null;
-      };
-    }
+    silentKickAudioElementRef.current?.load();
 
     const abortController = new AbortController();
-    const unlockAudio = () => {
-      void resumeAudioContext();
+    const warmAudioOnInteraction = () => {
+      void initializeAudio();
     };
 
-    window.addEventListener("pointerdown", unlockAudio, { passive: true });
-    window.addEventListener("touchstart", unlockAudio, { passive: true });
-    window.addEventListener("keydown", unlockAudio);
-
-    void decodeAudioBuffer(
-      audioContext,
-      ATTACK_SOUND_SRC,
-      abortController.signal,
-    ).then((audioBuffer) => {
-      attackAudioBufferRef.current = audioBuffer;
-    }).catch(() => {
-      attackAudioBufferRef.current = null;
+    window.addEventListener("pointerdown", warmAudioOnInteraction, {
+      passive: true,
     });
-
-    void decodeAudioBuffer(
-      audioContext,
-      CAPTURE_SOUND_SRC,
-      abortController.signal,
-    ).then((audioBuffer) => {
-      captureAudioBufferRef.current = audioBuffer;
-    }).catch(() => {
-      captureAudioBufferRef.current = null;
+    window.addEventListener("touchstart", warmAudioOnInteraction, {
+      passive: true,
     });
+    window.addEventListener("keydown", warmAudioOnInteraction);
 
-    void decodeAudioBuffer(
-      audioContext,
-      DEFEND_SOUND_SRC,
-      abortController.signal,
-    ).then((audioBuffer) => {
-      defendAudioBufferRef.current = audioBuffer;
-    }).catch(() => {
-      defendAudioBufferRef.current = null;
-    });
+    void loadEncodedAudio(ATTACK_SOUND_SRC, abortController.signal)
+      .then((encodedAudio) => {
+        attackEncodedAudioRef.current = encodedAudio;
+      })
+      .catch(() => {
+        attackEncodedAudioRef.current = null;
+      });
+
+    void loadEncodedAudio(CAPTURE_SOUND_SRC, abortController.signal)
+      .then((encodedAudio) => {
+        captureEncodedAudioRef.current = encodedAudio;
+      })
+      .catch(() => {
+        captureEncodedAudioRef.current = null;
+      });
+
+    void loadEncodedAudio(DEFEND_SOUND_SRC, abortController.signal)
+      .then((encodedAudio) => {
+        defendEncodedAudioRef.current = encodedAudio;
+      })
+      .catch(() => {
+        defendEncodedAudioRef.current = null;
+      });
 
     return () => {
+      const audioContext = audioContextRef.current;
+
       abortController.abort();
-      window.removeEventListener("pointerdown", unlockAudio);
-      window.removeEventListener("touchstart", unlockAudio);
-      window.removeEventListener("keydown", unlockAudio);
+      window.removeEventListener("pointerdown", warmAudioOnInteraction);
+      window.removeEventListener("touchstart", warmAudioOnInteraction);
+      window.removeEventListener("keydown", warmAudioOnInteraction);
       attackAudioBufferRef.current = null;
       captureAudioBufferRef.current = null;
       defendAudioBufferRef.current = null;
+      attackEncodedAudioRef.current = null;
+      captureEncodedAudioRef.current = null;
+      defendEncodedAudioRef.current = null;
       audioContextRef.current = null;
+      audioDecodePromiseRef.current = null;
       attackAudioElementRef.current = null;
       captureAudioElementRef.current = null;
       defendAudioElementRef.current = null;
-      void audioContext.close().catch(() => {
-        // Ignore close failures during teardown.
-      });
+
+      if (silentKickAudioElementRef.current?.src.startsWith("blob:")) {
+        URL.revokeObjectURL(silentKickAudioElementRef.current.src);
+      }
+
+      silentKickAudioElementRef.current = null;
+
+      if (audioContext) {
+        void audioContext.close().catch(() => {
+          // Ignore close failures during teardown.
+        });
+      }
     };
-  }, [resumeAudioContext]);
+  }, [initializeAudio]);
 
   const playSound = useCallback(
     (
       audioBuffer: AudioBuffer | null,
       audioElement: BrowserAudioElement | null,
     ) => {
-      if (preferElementAudioRef.current) {
-        playElementSound(audioElement);
-        return;
-      }
-
       if (audioBuffer && audioContextRef.current) {
         playBufferedSound(audioContextRef.current, audioBuffer);
         return;
@@ -626,6 +733,20 @@ export function useTerritoryGame() {
   }, [refreshSnapshot]);
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && audioContextRef.current) {
+        void initializeAudio();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [initializeAudio]);
+
+  useEffect(() => {
     const intervalId = window.setInterval(() => {
       const nextClientNow = Date.now();
       setClientNow(nextClientNow);
@@ -819,10 +940,12 @@ export function useTerritoryGame() {
     legendGroups,
     nextActionPointIn,
     onDefend: (townName: TownName) => {
+      void initializeAudio();
       playSound(defendAudioBufferRef.current, defendAudioElementRef.current);
       return performAction({ townName, type: "defend" });
     },
     onInvade: (townName: TownName, invadingRegion: RegionName) => {
+      void initializeAudio();
       playSound(attackAudioBufferRef.current, attackAudioElementRef.current);
       return performAction({ invadingRegion, townName, type: "invade" });
     },
