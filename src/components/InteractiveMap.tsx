@@ -11,7 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   Info,
-  RotateCcw,
+  Minimize,
   Settings2,
   X,
 } from "lucide-react";
@@ -1604,7 +1604,7 @@ function InteractiveMap() {
             onPointerDown={handleResetButtonPointerDown}
             type="button"
           >
-            <RotateCcw className="h-3.5 w-3.5 shrink-0" strokeWidth={2.1} />
+            <Minimize className="h-3.5 w-3.5 shrink-0" strokeWidth={2.1} />
           </button>
         ) : null}
       </div>

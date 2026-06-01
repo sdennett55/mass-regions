@@ -210,14 +210,14 @@ function TownBattlePanel({
                     canAct && !isCaptureProtected && !isLockedOut;
                   const attackStatusLabel = isCaptureProtected
                     ? "Protected"
+                    : isLockedOut
+                      ? "Locked"
                     : isActionPending
                       ? null
                     : !hasActionPointState
                       ? "Syncing"
                     : !hasEnoughActionPoints
                       ? "No points"
-                    : isLockedOut
-                      ? "Locked"
                       : null;
 
                   return (
