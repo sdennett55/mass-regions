@@ -26,7 +26,6 @@ import {
 } from "../data/massRegions";
 import {
   CAPTURE_POINTS_TO_CAPTURE,
-  PLAYER_ACTION_REGEN_INTERVAL_MS,
 } from "../game/constants";
 import { useTerritoryGame } from "../game/useTerritoryGame";
 import type { TownBattleState } from "../game/types";
@@ -451,6 +450,17 @@ function isTouchCapableDevice() {
   }
 }
 
+function formatActionPointRegenInterval(intervalMs: number) {
+  const totalSeconds = Math.max(1, Math.round(intervalMs / 1000));
+
+  if (totalSeconds < 60) {
+    return totalSeconds === 1 ? "1 sec" : `${totalSeconds} sec`;
+  }
+
+  const totalMinutes = Math.round(totalSeconds / 60);
+  return totalMinutes === 1 ? "1 min" : `${totalMinutes} min`;
+}
+
 function getPreviewMatrix(
   committedCamera: CameraState,
   previewCamera: CameraState,
@@ -515,6 +525,7 @@ function InteractiveMap() {
   const [hoveredTownId, setHoveredTownId] = useState<string | null>(null);
   const [selectedTownId, setSelectedTownId] = useState<string | null>(null);
   const {
+    actionPointRegenIntervalMs,
     actionPoints,
     activityEvents,
     capturedTownCount,
@@ -524,6 +535,7 @@ function InteractiveMap() {
     hasLiveSnapshot,
     isActionPending,
     legendGroups,
+    maxActionPoints,
     nextActionPointIn,
     onDefend,
     onInvade,
@@ -543,8 +555,8 @@ function InteractiveMap() {
     ? "Live region standings"
     : `Browse all regions and ${placeNounPlural}`;
   const mapAriaLabel = `Map of Massachusetts ${placeNounPlural} colored by region`;
-  const actionPointRegenMinutes = Math.round(
-    PLAYER_ACTION_REGEN_INTERVAL_MS / (60 * 1000),
+  const actionPointRegenLabel = formatActionPointRegenInterval(
+    actionPointRegenIntervalMs,
   );
   const legendSubheading = isBattleMode ? "Live standings" : "All regions";
 
@@ -1409,6 +1421,7 @@ function InteractiveMap() {
           capturedTownCount={capturedTownCount}
           compact={isCompactHud}
           contestedTownCount={contestedTownCount}
+          maxActionPoints={maxActionPoints}
           nextActionPointIn={nextActionPointIn}
           seasonLabel={seasonLabel}
           seasonTimeRemaining={seasonTimeRemaining}
@@ -1444,7 +1457,7 @@ function InteractiveMap() {
               </p>
               <p className="mt-1 text-xs font-medium text-slate-500">
                 {hasLiveSnapshot
-                  ? `You have ${actionPoints} points to spend. +1 point every ${actionPointRegenMinutes} min.`
+                  ? `You have ${actionPoints}/${maxActionPoints} points. +1 point every ${actionPointRegenLabel}.`
                   : "Syncing your points..."}
               </p>
               <p className="mt-2 text-[11px] font-medium text-slate-400">

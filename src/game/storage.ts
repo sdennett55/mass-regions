@@ -126,8 +126,16 @@ export function loadPlayerState(now = Date.now()) {
     }
 
     return {
+      actionPointRegenIntervalMs:
+        typeof parsedPlayerState.actionPointRegenIntervalMs === "number"
+          ? parsedPlayerState.actionPointRegenIntervalMs
+          : undefined,
       actionPoints,
       lastRegeneratedAt: parsedPlayerState.lastRegeneratedAt,
+      maxActionPoints:
+        typeof parsedPlayerState.maxActionPoints === "number"
+          ? parsedPlayerState.maxActionPoints
+          : undefined,
     }
   } catch {
     return createPlayerState(now)

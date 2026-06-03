@@ -5,6 +5,8 @@ import {
   buildRegionControlLegend,
   buildTownVisualStates,
   formatDurationShort,
+  getPlayerActionPointRegenIntervalMs,
+  getPlayerMaxActionPoints,
   getNextTownVisualExpiryAt,
   getSeasonTimeRemaining,
   getTimeUntilNextActionPoint,
@@ -905,6 +907,14 @@ export function useTerritoryGame() {
     () => getSeasonTimeRemaining(snapshot.season, serverNow),
     [serverNow, snapshot.season],
   );
+  const maxActionPoints = useMemo(
+    () => getPlayerMaxActionPoints(resolvedPlayerState),
+    [resolvedPlayerState],
+  );
+  const actionPointRegenIntervalMs = useMemo(
+    () => getPlayerActionPointRegenIntervalMs(resolvedPlayerState),
+    [resolvedPlayerState],
+  );
   const nextActionPointIn = useMemo(
     () => getTimeUntilNextActionPoint(snapshot.player, serverNow),
     [serverNow, snapshot.player],
@@ -1056,6 +1066,7 @@ export function useTerritoryGame() {
   );
 
   return {
+    actionPointRegenIntervalMs,
     actionPoints: resolvedPlayerState.actionPoints,
     activityEvents,
     capturedTownCount,
@@ -1066,6 +1077,7 @@ export function useTerritoryGame() {
     hasLiveSnapshot,
     isActionPending,
     legendGroups,
+    maxActionPoints,
     nextActionPointIn,
     onDefend: (townName: TownName) => {
       return performAction({ townName, type: "defend" });

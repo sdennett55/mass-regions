@@ -5,7 +5,7 @@ import express from "express"
 import type { Request, Response } from "express"
 import { rateLimit } from "express-rate-limit"
 
-import type { PlayerAction } from "../../src/game/types.ts"
+import type { PlayerAction, PlayerProfile } from "../../src/game/types.ts"
 
 import { serverConfig } from "./config.ts"
 import { TerritoryGameStore } from "./gameStore.ts"
@@ -29,6 +29,7 @@ const runtimeStats = new RuntimeStatsTracker()
 const sessionManager = new AnonymousSessionManager()
 const ipModeration = new IpModerationTracker({
   blockedIps: serverConfig.ipTimeoutBlockedIps,
+  exemptIps: serverConfig.proPlayerIps,
   maxNewSessions: serverConfig.ipTimeoutMaxNewSessions,
   newSessionWindowMs: serverConfig.ipTimeoutNewSessionWindowMs,
   persistence,
@@ -46,6 +47,9 @@ const stateLimiter = rateLimit({
 const actionLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: "Too many actions right now. Please slow down." },
+  skip(request) {
+    return isProPlayerIp(getClientIp(request))
+  },
   standardHeaders: "draft-8",
   windowMs: 60 * 1000,
   limit: 40,
@@ -152,6 +156,25 @@ function getClientIp(request: Request) {
   return request.ip || request.socket.remoteAddress || "unknown"
 }
 
+function isProPlayerIp(ip: string) {
+  return serverConfig.proPlayerIps.has(ip)
+}
+
+function getPlayerProfileForIp(ip: string): PlayerProfile | null {
+  if (!isProPlayerIp(ip)) {
+    return null
+  }
+
+  return {
+    actionPointRegenIntervalMs: serverConfig.proPlayerRegenIntervalMs,
+    maxActionPoints: serverConfig.proPlayerMaxActionPoints,
+  }
+}
+
+function getPlayerProfileForRequest(request: Request) {
+  return getPlayerProfileForIp(getClientIp(request))
+}
+
 function getStatsSnapshot(now = Date.now()) {
   return runtimeStats.getSnapshot(now, ipModeration.getSnapshot(now))
 }
@@ -216,7 +239,11 @@ app.post(
         ? timeoutDurationMinutes * 60 * 1000
         : serverConfig.ipTimeoutDurationMs
 
-    ipModeration.blockIp(ip.trim(), resolvedDurationMs)
+    const didBlockIp = ipModeration.blockIp(ip.trim(), resolvedDurationMs)
+    if (!didBlockIp) {
+      response.status(409).json({ error: "Pro user IPs are exempt from timeouts." })
+      return
+    }
     console.warn(
       `[moderation] admin timed out ${ip.trim()} for ${Math.round(
         resolvedDurationMs / 60000,
@@ -260,6 +287,7 @@ app.get(
   (request, response: Response<ServerStateResponse | { error: string }>) => {
     runtimeStats.recordStateRequest()
     const clientIp = getClientIp(request)
+    const playerProfile = getPlayerProfileForIp(clientIp)
     const existingSession = sessionManager.resolveExistingSession(request, response)
     const ipBlockStatus = ipModeration.getBlockStatus(clientIp)
 
@@ -289,14 +317,14 @@ app.get(
     if (shouldRefillActionPoints) {
       response.json({
         sessionToken,
-        snapshot: store.refillPlayerActionPoints(sessionId),
+        snapshot: store.refillPlayerActionPoints(sessionId, Date.now(), playerProfile),
       })
       return
     }
 
     response.json({
       sessionToken,
-      snapshot: store.getSnapshot(sessionId),
+      snapshot: store.getSnapshot(sessionId, Date.now(), playerProfile),
     })
   },
 )
@@ -307,6 +335,7 @@ app.post(
   (request: Request, response) => {
     const startedAt = performance.now()
     const clientIp = getClientIp(request)
+    const playerProfile = getPlayerProfileForIp(clientIp)
     const { action } = (request.body ?? {}) as Partial<ServerActionRequest>
     const ipBlockStatus = ipModeration.getBlockStatus(clientIp)
 
@@ -354,13 +383,13 @@ app.post(
         error: "Session syncing. Please try again.",
         ok: false,
         sessionToken,
-        snapshot: store.getSnapshot(sessionId),
+        snapshot: store.getSnapshot(sessionId, Date.now(), playerProfile),
       })
       return
     }
 
     const { sessionId, sessionToken } = resolvedSession
-    const result = store.applyPlayerAction(sessionId, action)
+    const result = store.applyPlayerAction(sessionId, action, Date.now(), playerProfile)
     if (result.ok) {
       ipModeration.recordAction(clientIp)
     }
@@ -385,6 +414,7 @@ app.get("/api/events", eventLimiter, (request, response) => {
   }
 
   const { sessionId } = resolvedSession
+  const playerProfile = getPlayerProfileForRequest(request)
   runtimeStats.recordSseConnectionOpened()
 
   response.setHeader("Cache-Control", "no-cache, no-transform")
@@ -397,7 +427,7 @@ app.get("/api/events", eventLimiter, (request, response) => {
     response.write(`data: ${JSON.stringify(data)}\n\n`)
   }
 
-  sendEvent("snapshot", store.getSnapshot(sessionId))
+  sendEvent("snapshot", store.getSnapshot(sessionId, Date.now(), playerProfile))
 
   const unsubscribe = store.subscribe((event: ServerGameEvent) => {
     sendEvent(event.type, event)

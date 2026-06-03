@@ -17,6 +17,7 @@ type IpEntry = {
 
 type IpModerationConfig = {
   blockedIps: Set<string>
+  exemptIps: Set<string>
   maxNewSessions: number
   newSessionWindowMs: number
   persistence: ServerPersistence
@@ -42,6 +43,11 @@ export class IpModerationTracker {
 
   private hydratePersistedBlocks(now = Date.now()) {
     for (const { ip, record } of this.config.persistence.loadIpBlocks()) {
+      if (this.isExemptIp(ip)) {
+        this.config.persistence.deleteIpBlock(ip)
+        continue
+      }
+
       const blockedUntil =
         typeof record.blockedUntil === "number" ? record.blockedUntil : null
 
@@ -55,6 +61,10 @@ export class IpModerationTracker {
       entry.blockedUntil = blockedUntil
       entry.isManualBlock = record.reason === "Timed out by admin."
     }
+  }
+
+  private isExemptIp(ip: string) {
+    return this.config.exemptIps.has(ip)
   }
 
   private persistIpBlock(ip: string, record: IpBlockRecord) {
@@ -81,6 +91,15 @@ export class IpModerationTracker {
     const entry = this.entries.get(ip)
     if (!entry) {
       return
+    }
+
+    if (this.isExemptIp(ip)) {
+      if (isFiniteTimestamp(entry.blockedUntil) || entry.blockReason !== null) {
+        entry.blockedUntil = null
+        entry.blockReason = null
+        entry.isManualBlock = false
+        this.config.persistence.deleteIpBlock(ip)
+      }
     }
 
     entry.actionTimestamps = entry.actionTimestamps.filter(
@@ -141,6 +160,14 @@ export class IpModerationTracker {
   }
 
   getBlockStatus(ip: string, now = Date.now()): IpBlockStatus {
+    if (this.isExemptIp(ip)) {
+      return {
+        blockReason: null,
+        blockedUntil: null,
+        isBlocked: false,
+      }
+    }
+
     if (this.config.blockedIps.has(ip)) {
       return {
         blockReason: "Blocked by server configuration.",
@@ -153,6 +180,17 @@ export class IpModerationTracker {
   }
 
   recordNewSession(ip: string, now = Date.now()) {
+    if (this.isExemptIp(ip)) {
+      const entry = this.getEntry(ip)
+      entry.newSessionTimestamps.push(now)
+      this.pruneEntry(ip, now)
+
+      return {
+        autoBlocked: false,
+        blockReason: null,
+      }
+    }
+
     if (this.config.blockedIps.has(ip)) {
       return {
         autoBlocked: false,
@@ -201,6 +239,13 @@ export class IpModerationTracker {
   }
 
   recordAction(ip: string, now = Date.now()) {
+    if (this.isExemptIp(ip)) {
+      const entry = this.getEntry(ip)
+      entry.actionTimestamps.push(now)
+      this.pruneEntry(ip, now)
+      return
+    }
+
     if (this.config.blockedIps.has(ip)) {
       return
     }
@@ -211,6 +256,11 @@ export class IpModerationTracker {
   }
 
   blockIp(ip: string, durationMs: number, now = Date.now()) {
+    if (this.isExemptIp(ip)) {
+      this.unblockIp(ip)
+      return false
+    }
+
     const entry = this.getEntry(ip)
     entry.blockedUntil = now + durationMs
     entry.blockReason = "Timed out by admin."
@@ -220,6 +270,8 @@ export class IpModerationTracker {
       createdAt: now,
       reason: entry.blockReason,
     })
+
+    return true
   }
 
   unblockIp(ip: string) {

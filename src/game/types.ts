@@ -21,9 +21,16 @@ export interface SeasonState {
   towns: Record<TownName, TownBattleState>
 }
 
+export interface PlayerProfile {
+  actionPointRegenIntervalMs: number
+  maxActionPoints: number
+}
+
 export interface PlayerState {
+  actionPointRegenIntervalMs?: number
   actionPoints: number
   lastRegeneratedAt: number
+  maxActionPoints?: number
 }
 
 export interface TownBounds {

@@ -9,6 +9,8 @@ const DEFAULT_SQLITE_FILENAME = "mass-regions.sqlite"
 const DEFAULT_IP_TIMEOUT_DURATION_MS = 24 * 60 * 60 * 1000
 const DEFAULT_IP_TIMEOUT_NEW_SESSION_WINDOW_MS = 15 * 60 * 1000
 const DEFAULT_IP_TIMEOUT_MAX_NEW_SESSIONS = 2
+const DEFAULT_PRO_PLAYER_MAX_ACTION_POINTS = 100
+const DEFAULT_PRO_PLAYER_REGEN_INTERVAL_MS = 1000
 
 type SessionCookieSameSite = "lax" | "strict" | "none"
 
@@ -134,6 +136,15 @@ export const serverConfig = {
   isAllowedOrigin: createAllowedOriginChecker(allowedOrigins),
   isProduction,
   port: parsePort(process.env.PORT),
+  proPlayerIps: parseBlockedIps(process.env.PRO_PLAYER_IPS),
+  proPlayerMaxActionPoints: parsePositiveInteger(
+    process.env.PRO_PLAYER_MAX_ACTION_POINTS,
+    DEFAULT_PRO_PLAYER_MAX_ACTION_POINTS,
+  ),
+  proPlayerRegenIntervalMs: parsePositiveInteger(
+    process.env.PRO_PLAYER_REGEN_INTERVAL_MS,
+    DEFAULT_PRO_PLAYER_REGEN_INTERVAL_MS,
+  ),
   databasePath: resolveDatabasePath(
     process.env.DATA_DIR,
     process.env.SQLITE_FILENAME,

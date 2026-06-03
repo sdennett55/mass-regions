@@ -31,7 +31,7 @@ function formatActivityTimestamp(timestamp: number, now: number) {
 
 function getActivityTitle(event: ActivityEvent) {
   if (event.kind === 'capture') {
-    return `${formatTownLabel(event.townName)} captured by ${event.region}`
+    return `${event.region} captured ${formatTownLabel(event.townName)}`
   }
 
   if (event.kind === 'total-control') {

@@ -23,7 +23,11 @@ function isPlayerState(value: unknown): value is PlayerState {
   const candidate = value as Partial<PlayerState>;
   return (
     typeof candidate.actionPoints === "number" &&
-    typeof candidate.lastRegeneratedAt === "number"
+    typeof candidate.lastRegeneratedAt === "number" &&
+    (typeof candidate.maxActionPoints === "number" ||
+      typeof candidate.maxActionPoints === "undefined") &&
+    (typeof candidate.actionPointRegenIntervalMs === "number" ||
+      typeof candidate.actionPointRegenIntervalMs === "undefined")
   );
 }
 

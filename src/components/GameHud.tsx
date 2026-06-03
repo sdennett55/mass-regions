@@ -5,7 +5,6 @@ import {
 } from "react";
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 
-import { PLAYER_MAX_ACTION_POINTS } from "../game/constants";
 import { formatDurationShort } from "../game/logic";
 
 type GameHudProps = {
@@ -13,6 +12,7 @@ type GameHudProps = {
   contestedTownCount: number;
   actionPoints: number | null;
   compact: boolean;
+  maxActionPoints: number;
   nextActionPointIn: number;
   seasonLabel: string;
   seasonTimeRemaining: number;
@@ -23,6 +23,7 @@ function GameHud({
   contestedTownCount,
   actionPoints,
   compact,
+  maxActionPoints,
   nextActionPointIn,
   seasonLabel,
   seasonTimeRemaining,
@@ -34,7 +35,7 @@ function GameHud({
         <Loader2 className="animate-spin" size={20} />
       </span>
     ) : (
-      `${actionPoints}/${PLAYER_MAX_ACTION_POINTS}`
+      `${actionPoints}/${maxActionPoints}`
     );
   const actionPointsLabelSm =
     actionPoints === null ? (
@@ -42,7 +43,7 @@ function GameHud({
         <Loader2 className="animate-spin" size={16} />
       </span>
     ) : (
-      `${actionPoints}/${PLAYER_MAX_ACTION_POINTS}`
+      `${actionPoints}/${maxActionPoints}`
     );
   const actionPointsValueClassName =
     actionPoints === 0 ? "text-rose-400" : "text-white";

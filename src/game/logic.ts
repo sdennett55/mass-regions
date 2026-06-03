@@ -20,6 +20,7 @@ import {
 import type {
   ActionResult,
   PlayerAction,
+  PlayerProfile,
   PlayerState,
   RegionControlGroup,
   RegionalClaims,
@@ -33,6 +34,37 @@ import { baselineTownRegions, regionalClaims as defaultRegionalClaims } from "./
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
+}
+
+function roundPositiveInteger(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return null
+  }
+
+  return Math.max(1, Math.round(value))
+}
+
+function resolvePlayerProfile(
+  player?: Pick<PlayerState, "actionPointRegenIntervalMs" | "maxActionPoints"> | null,
+  profile?: Partial<PlayerProfile> | null,
+): PlayerProfile {
+  if (profile === null) {
+    return {
+      actionPointRegenIntervalMs: PLAYER_ACTION_REGEN_INTERVAL_MS,
+      maxActionPoints: PLAYER_MAX_ACTION_POINTS,
+    }
+  }
+
+  return {
+    actionPointRegenIntervalMs:
+      roundPositiveInteger(profile?.actionPointRegenIntervalMs) ??
+      roundPositiveInteger(player?.actionPointRegenIntervalMs) ??
+      PLAYER_ACTION_REGEN_INTERVAL_MS,
+    maxActionPoints:
+      roundPositiveInteger(profile?.maxActionPoints) ??
+      roundPositiveInteger(player?.maxActionPoints) ??
+      PLAYER_MAX_ACTION_POINTS,
+  }
 }
 
 function normalizeCaptureProgress(value: number) {
@@ -209,51 +241,108 @@ export function getTownCaptureProtectionRemaining(
   return Math.max(0, town.lastCapturedAt + CAPTURE_PROTECTION_WINDOW_MS - now)
 }
 
-export function createPlayerState(now = Date.now()): PlayerState {
+export function getPlayerMaxActionPoints(
+  player?: Pick<PlayerState, "maxActionPoints"> | null,
+) {
+  return resolvePlayerProfile(player).maxActionPoints
+}
+
+export function getPlayerActionPointRegenIntervalMs(
+  player?: Pick<PlayerState, "actionPointRegenIntervalMs"> | null,
+) {
+  return resolvePlayerProfile(player).actionPointRegenIntervalMs
+}
+
+export function normalizePlayerState(
+  player: PlayerState,
+  now = Date.now(),
+  profile?: Partial<PlayerProfile> | null,
+): PlayerState {
+  const resolvedProfile = resolvePlayerProfile(player, profile)
+  const safeLastRegeneratedAt =
+    typeof player.lastRegeneratedAt === "number" && Number.isFinite(player.lastRegeneratedAt)
+      ? Math.min(player.lastRegeneratedAt, now)
+      : now
+  const safeActionPoints =
+    typeof player.actionPoints === "number" && Number.isFinite(player.actionPoints)
+      ? Math.round(player.actionPoints)
+      : resolvedProfile.maxActionPoints
+  const previousMaxActionPoints = getPlayerMaxActionPoints(player)
+  const previousRegenIntervalMs = getPlayerActionPointRegenIntervalMs(player)
+  const profileChanged =
+    previousMaxActionPoints !== resolvedProfile.maxActionPoints ||
+    previousRegenIntervalMs !== resolvedProfile.actionPointRegenIntervalMs
+
+  const nextActionPoints = profileChanged && resolvedProfile.maxActionPoints > previousMaxActionPoints
+    ? resolvedProfile.maxActionPoints
+    : clamp(safeActionPoints, 0, resolvedProfile.maxActionPoints)
+
   return {
-    actionPoints: PLAYER_MAX_ACTION_POINTS,
+    actionPointRegenIntervalMs: resolvedProfile.actionPointRegenIntervalMs,
+    actionPoints: nextActionPoints,
+    lastRegeneratedAt: safeLastRegeneratedAt,
+    maxActionPoints: resolvedProfile.maxActionPoints,
+  }
+}
+
+export function createPlayerState(
+  now = Date.now(),
+  profile?: Partial<PlayerProfile> | null,
+): PlayerState {
+  const resolvedProfile = resolvePlayerProfile(undefined, profile)
+
+  return {
+    actionPointRegenIntervalMs: resolvedProfile.actionPointRegenIntervalMs,
+    actionPoints: resolvedProfile.maxActionPoints,
     lastRegeneratedAt: now,
+    maxActionPoints: resolvedProfile.maxActionPoints,
   }
 }
 
 export function regeneratePlayerActionPoints(player: PlayerState, now = Date.now()) {
-  const safeLastRegeneratedAt = Math.min(player.lastRegeneratedAt, now)
+  const normalizedPlayer = normalizePlayerState(player, now)
+  const safeLastRegeneratedAt = Math.min(normalizedPlayer.lastRegeneratedAt, now)
   const elapsed = now - safeLastRegeneratedAt
-  const recoveredPoints = Math.floor(elapsed / PLAYER_ACTION_REGEN_INTERVAL_MS)
+  const maxActionPoints = getPlayerMaxActionPoints(normalizedPlayer)
+  const actionPointRegenIntervalMs = getPlayerActionPointRegenIntervalMs(normalizedPlayer)
+  const recoveredPoints = Math.floor(elapsed / actionPointRegenIntervalMs)
 
   if (recoveredPoints <= 0) {
     return {
-      ...player,
+      ...normalizedPlayer,
       lastRegeneratedAt: safeLastRegeneratedAt,
     }
   }
 
   const nextActionPoints = Math.min(
-    PLAYER_MAX_ACTION_POINTS,
-    player.actionPoints + recoveredPoints,
+    maxActionPoints,
+    normalizedPlayer.actionPoints + recoveredPoints,
   )
   const spentIntervals =
-    nextActionPoints >= PLAYER_MAX_ACTION_POINTS
-      ? Math.max(0, PLAYER_MAX_ACTION_POINTS - player.actionPoints)
+    nextActionPoints >= maxActionPoints
+      ? Math.max(0, maxActionPoints - normalizedPlayer.actionPoints)
       : recoveredPoints
 
   return {
+    ...normalizedPlayer,
     actionPoints: nextActionPoints,
     lastRegeneratedAt:
-      safeLastRegeneratedAt + spentIntervals * PLAYER_ACTION_REGEN_INTERVAL_MS,
+      safeLastRegeneratedAt + spentIntervals * actionPointRegenIntervalMs,
   }
 }
 
 export function getTimeUntilNextActionPoint(player: PlayerState, now = Date.now()) {
   const resolvedPlayer = regeneratePlayerActionPoints(player, now)
+  const maxActionPoints = getPlayerMaxActionPoints(resolvedPlayer)
+  const actionPointRegenIntervalMs = getPlayerActionPointRegenIntervalMs(resolvedPlayer)
 
-  if (resolvedPlayer.actionPoints >= PLAYER_MAX_ACTION_POINTS) {
+  if (resolvedPlayer.actionPoints >= maxActionPoints) {
     return 0
   }
 
   return Math.max(
     0,
-    PLAYER_ACTION_REGEN_INTERVAL_MS - (now - resolvedPlayer.lastRegeneratedAt),
+    actionPointRegenIntervalMs - (now - resolvedPlayer.lastRegeneratedAt),
   )
 }
 
@@ -263,17 +352,19 @@ export function spendPlayerActionPoints(
   amount = PLAYER_ACTION_COST,
 ) {
   const resolvedPlayer = regeneratePlayerActionPoints(player, now)
+  const maxActionPoints = getPlayerMaxActionPoints(resolvedPlayer)
 
   if (resolvedPlayer.actionPoints < amount) {
     return null
   }
 
   const nextLastRegeneratedAt =
-    resolvedPlayer.actionPoints >= PLAYER_MAX_ACTION_POINTS
+    resolvedPlayer.actionPoints >= maxActionPoints
       ? now
       : resolvedPlayer.lastRegeneratedAt
 
   return {
+    ...resolvedPlayer,
     actionPoints: resolvedPlayer.actionPoints - amount,
     lastRegeneratedAt: nextLastRegeneratedAt,
   }

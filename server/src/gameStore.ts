@@ -7,12 +7,14 @@ import {
   getSeasonTimeRemaining,
   getSeasonWindow,
   getTimeUntilNextActionPoint,
+  normalizePlayerState,
   regeneratePlayerActionPoints,
   spendPlayerActionPoints,
 } from "../../src/game/logic.ts"
 import { sharedTownNeighbors } from "../../src/game/townNeighbors.ts"
 import type {
   PlayerAction,
+  PlayerProfile,
   PlayerState,
   SeasonState,
   TownNeighbors,
@@ -28,6 +30,19 @@ import type {
 import type { ServerPersistence } from "./persistence.ts"
 
 type StoreListener = (event: ServerGameEvent) => void
+
+function arePlayerStatesEqual(
+  left: PlayerState | null | undefined,
+  right: PlayerState,
+) {
+  return (
+    !!left &&
+    left.actionPoints === right.actionPoints &&
+    left.lastRegeneratedAt === right.lastRegeneratedAt &&
+    left.maxActionPoints === right.maxActionPoints &&
+    left.actionPointRegenIntervalMs === right.actionPointRegenIntervalMs
+  )
+}
 
 export class TerritoryGameStore {
   private listeners = new Set<StoreListener>()
@@ -95,21 +110,23 @@ export class TerritoryGameStore {
     }
   }
 
-  private ensurePlayer(playerId: string, now: number) {
+  private ensurePlayer(
+    playerId: string,
+    now: number,
+    profile?: Partial<PlayerProfile> | null,
+  ) {
     const existingPlayer =
       this.playerStates.get(playerId) ?? this.persistence.loadPlayerState(playerId)
     if (!existingPlayer) {
-      const nextPlayer = createPlayerState(now)
+      const nextPlayer = createPlayerState(now, profile)
       this.playerStates.set(playerId, nextPlayer)
       this.persistence.savePlayerState(playerId, nextPlayer)
       return nextPlayer
     }
 
-    const refreshedPlayer = regeneratePlayerActionPoints(existingPlayer, now)
-    if (
-      refreshedPlayer.actionPoints !== existingPlayer.actionPoints ||
-      refreshedPlayer.lastRegeneratedAt !== existingPlayer.lastRegeneratedAt
-    ) {
+    const normalizedPlayer = normalizePlayerState(existingPlayer, now, profile)
+    const refreshedPlayer = regeneratePlayerActionPoints(normalizedPlayer, now)
+    if (!arePlayerStatesEqual(existingPlayer, refreshedPlayer)) {
       this.playerStates.set(playerId, refreshedPlayer)
       this.persistence.savePlayerState(playerId, refreshedPlayer)
     }
@@ -117,12 +134,16 @@ export class TerritoryGameStore {
     return refreshedPlayer
   }
 
-  refillPlayerActionPoints(playerId: string, now = Date.now()) {
+  refillPlayerActionPoints(
+    playerId: string,
+    now = Date.now(),
+    profile?: Partial<PlayerProfile> | null,
+  ) {
     this.ensureSeason(now)
-    const nextPlayer = createPlayerState(now)
+    const nextPlayer = createPlayerState(now, profile)
     this.playerStates.set(playerId, nextPlayer)
     this.persistence.savePlayerState(playerId, nextPlayer)
-    return this.getSnapshot(playerId, now)
+    return this.getSnapshot(playerId, now, profile)
   }
 
   private getCapturedTownCount(snapshot: ServerGameSnapshot) {
@@ -131,9 +152,13 @@ export class TerritoryGameStore {
     ).length
   }
 
-  getSnapshot(playerId: string, now = Date.now()): ServerGameSnapshot {
+  getSnapshot(
+    playerId: string,
+    now = Date.now(),
+    profile?: Partial<PlayerProfile> | null,
+  ): ServerGameSnapshot {
     this.ensureSeason(now)
-    const player = this.ensurePlayer(playerId, now)
+    const player = this.ensurePlayer(playerId, now, profile)
     const townVisualStates = buildTownVisualStates(
       this.seasonState,
       this.townNeighbors,
@@ -163,16 +188,17 @@ export class TerritoryGameStore {
     playerId: string,
     action: PlayerAction,
     now = Date.now(),
+    profile?: Partial<PlayerProfile> | null,
   ): ServerActionResponse {
     this.ensureSeason(now)
-    const player = this.ensurePlayer(playerId, now)
+    const player = this.ensurePlayer(playerId, now, profile)
     const nextPlayerState = spendPlayerActionPoints(player, now)
 
     if (!nextPlayerState) {
       return {
         error: "No action points available.",
         ok: false,
-        snapshot: this.getSnapshot(playerId, now),
+        snapshot: this.getSnapshot(playerId, now, profile),
       }
     }
 
@@ -187,7 +213,7 @@ export class TerritoryGameStore {
       return {
         error: actionResult.error ?? "Action unavailable.",
         ok: false,
-        snapshot: this.getSnapshot(playerId, now),
+        snapshot: this.getSnapshot(playerId, now, profile),
       }
     }
 
@@ -214,7 +240,7 @@ export class TerritoryGameStore {
 
     return {
       ok: true,
-      snapshot: this.getSnapshot(playerId, now),
+      snapshot: this.getSnapshot(playerId, now, profile),
     }
   }
 
