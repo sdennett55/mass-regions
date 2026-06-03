@@ -1,4 +1,7 @@
-import type { ServerStatsSnapshot } from "./protocol.ts"
+import type {
+  ServerIpModerationSnapshot,
+  ServerStatsSnapshot,
+} from "./protocol.ts"
 
 type RecordedAction = {
   durationMs: number
@@ -79,7 +82,10 @@ export class RuntimeStatsTracker {
     this.activeSseConnections = Math.max(0, this.activeSseConnections - 1)
   }
 
-  getSnapshot(now = Date.now()): ServerStatsSnapshot {
+  getSnapshot(
+    now = Date.now(),
+    moderation?: ServerIpModerationSnapshot,
+  ): ServerStatsSnapshot {
     this.pruneRecentTimestamps(now)
 
     const memoryUsage = process.memoryUsage()
@@ -109,6 +115,10 @@ export class RuntimeStatsTracker {
         connectionAttemptsLastMinute: this.recentSseConnectionTimestamps.length,
         peakConnections: this.peakSseConnections,
         totalConnections: this.totalSseConnections,
+      },
+      moderation: moderation ?? {
+        activeBlockedIps: 0,
+        hotIps: [],
       },
       uptimeSeconds: Math.round(process.uptime()),
     }

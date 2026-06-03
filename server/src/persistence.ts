@@ -9,6 +9,12 @@ export type FingerprintRecord = {
   lastIssuedSessionId: string | null;
 };
 
+export type IpBlockRecord = {
+  blockedUntil: number | null;
+  createdAt: number;
+  reason: string;
+};
+
 function isPlayerState(value: unknown): value is PlayerState {
   if (!value || typeof value !== "object") {
     return false;
@@ -32,6 +38,19 @@ function isFingerprintRecord(value: unknown): value is FingerprintRecord {
     candidate.issuedAtTimestamps.every((timestamp) => typeof timestamp === "number") &&
     (typeof candidate.lastIssuedSessionId === "string" ||
       candidate.lastIssuedSessionId === null)
+  );
+}
+
+function isIpBlockRecord(value: unknown): value is IpBlockRecord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<IpBlockRecord>;
+  return (
+    (typeof candidate.blockedUntil === "number" || candidate.blockedUntil === null) &&
+    typeof candidate.createdAt === "number" &&
+    typeof candidate.reason === "string"
   );
 }
 
@@ -73,6 +92,11 @@ export class ServerPersistence {
 
       CREATE TABLE IF NOT EXISTS session_fingerprints (
         fingerprint TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS ip_blocks (
+        ip TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
     `);
@@ -165,5 +189,39 @@ export class ServerPersistence {
         ON CONFLICT(fingerprint) DO UPDATE SET value = excluded.value
       `)
       .run(fingerprint, JSON.stringify(record));
+  }
+
+  loadIpBlocks() {
+    const rows = this.database
+      .prepare("SELECT ip, value FROM ip_blocks")
+      .all() as Array<{ ip: string; value: string }>;
+
+    return rows
+      .map((row) => {
+        const record = parseJsonValue<IpBlockRecord>(row.value, isIpBlockRecord);
+        if (!record) {
+          return null;
+        }
+
+        return {
+          ip: row.ip,
+          record,
+        };
+      })
+      .filter((row): row is { ip: string; record: IpBlockRecord } => row !== null);
+  }
+
+  saveIpBlock(ip: string, record: IpBlockRecord) {
+    this.database
+      .prepare(`
+        INSERT INTO ip_blocks (ip, value)
+        VALUES (?, ?)
+        ON CONFLICT(ip) DO UPDATE SET value = excluded.value
+      `)
+      .run(ip, JSON.stringify(record));
+  }
+
+  deleteIpBlock(ip: string) {
+    this.database.prepare("DELETE FROM ip_blocks WHERE ip = ?").run(ip);
   }
 }

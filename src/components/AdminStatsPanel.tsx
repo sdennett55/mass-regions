@@ -6,7 +6,11 @@ import {
 } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
-import { fetchServerStats } from "../game/serverClient";
+import {
+  clearServerIpTimeout,
+  createServerIpTimeout,
+  fetchServerStats,
+} from "../game/serverClient";
 import type { ServerStatsSnapshot } from "../game/serverProtocol";
 
 const ADMIN_STATS_POLL_INTERVAL_MS = 5000;
@@ -83,6 +87,17 @@ function formatUpdatedAt(timestamp: number | null) {
   }).format(timestamp);
 }
 
+function formatTimeoutEnd(timestamp: number | null) {
+  if (!timestamp) {
+    return "Config block";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp);
+}
+
 type StatCardProps = {
   label: string;
   tone?: "neutral" | "good" | "warning";
@@ -114,6 +129,7 @@ function AdminStatsPanel() {
   );
   const [adminStatsTokenDraft, setAdminStatsTokenDraft] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [moderatingIp, setModeratingIp] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     if (typeof window === "undefined") {
@@ -233,14 +249,70 @@ function AdminStatsPanel() {
     setErrorMessage(null);
   };
 
+  const handleBlockIp = async (ip: string) => {
+    if (!adminStatsToken) {
+      return;
+    }
+
+    setModeratingIp(ip);
+    try {
+      const result = await createServerIpTimeout(ip, adminStatsToken, 24 * 60);
+      setStats((currentStats) =>
+        currentStats
+          ? {
+              ...currentStats,
+              moderation: result.moderation,
+            }
+          : currentStats,
+      );
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to time out that IP.",
+      );
+    } finally {
+      setModeratingIp(null);
+    }
+  };
+
+  const handleClearIpTimeout = async (ip: string) => {
+    if (!adminStatsToken) {
+      return;
+    }
+
+    setModeratingIp(ip);
+    try {
+      const result = await clearServerIpTimeout(ip, adminStatsToken);
+      setStats((currentStats) =>
+        currentStats
+          ? {
+              ...currentStats,
+              moderation: result.moderation,
+            }
+          : currentStats,
+      );
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to clear that timeout.",
+      );
+    } finally {
+      setModeratingIp(null);
+    }
+  };
+
   const hasWarningState =
     !!stats &&
     (stats.actions.sessionSyncErrors > 0 || stats.actions.rejected > 0);
 
   return (
     <aside
-      className="pointer-events-auto w-[min(19rem,calc(100vw-1.5rem))] overflow-hidden rounded-3xl border border-white/15 bg-slate-950/90 text-white shadow-[0_20px_48px_rgba(15,23,42,0.28)] backdrop-blur"
+      className="pointer-events-auto flex w-[min(19rem,calc(100vw-1.5rem))] min-h-0 flex-col overflow-hidden rounded-3xl border border-white/15 bg-slate-950/90 text-white shadow-[0_20px_48px_rgba(15,23,42,0.28)] backdrop-blur"
       data-ui-control="true"
+      style={{
+        maxHeight:
+          "calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 4.5rem)",
+      }}
     >
       <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div className="min-w-0">
@@ -269,7 +341,7 @@ function AdminStatsPanel() {
       </div>
 
       {isCollapsed ? null : (
-        <div className="space-y-3 px-4 py-3">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
           {!adminStatsToken ? (
             <form
               className="space-y-3 rounded-2xl bg-white/6 px-3 py-3 ring-1 ring-white/10"
@@ -351,6 +423,11 @@ function AdminStatsPanel() {
                   label="RSS"
                   value={`${stats.memory.rssMb.toLocaleString()} MB`}
                 />
+                <StatCard
+                  label="Blocked IPs"
+                  tone={stats.moderation.activeBlockedIps > 0 ? "warning" : "neutral"}
+                  value={stats.moderation.activeBlockedIps.toLocaleString()}
+                />
               </div>
 
               <div className="rounded-2xl bg-white/6 px-3 py-3 ring-1 ring-white/10">
@@ -384,6 +461,89 @@ function AdminStatsPanel() {
                     {stats.sse.connectionAttemptsLastMinute.toLocaleString()}
                   </span>
                 </div>
+              </div>
+
+              <div className="rounded-2xl bg-white/6 px-3 py-3 ring-1 ring-white/10">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      Hot IPs
+                    </p>
+                    <p className="mt-1 text-xs font-medium text-white/60">
+                      New sessions are tracked over 15 minutes. Actions are tracked over 10.
+                    </p>
+                  </div>
+                  <span className="text-xs font-semibold uppercase tracking-[0.14em] text-white/45">
+                    Admin only
+                  </span>
+                </div>
+
+                {stats.moderation.hotIps.length ? (
+                  <div className="mt-3 space-y-2">
+                    {stats.moderation.hotIps.map((entry) => {
+                      const isBusy = moderatingIp === entry.ip;
+                      const isConfigBlocked =
+                        entry.isBlocked && entry.blockedUntil === null;
+                      const isHighActionIp = entry.actionCountLastWindow > 20;
+                      return (
+                        <div
+                          key={entry.ip}
+                          className="rounded-2xl bg-slate-950/40 px-3 py-3 ring-1 ring-white/8"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p
+                                className={`truncate text-sm font-semibold ${
+                                  isHighActionIp ? "text-rose-300" : "text-white"
+                                }`}
+                              >
+                                {entry.ip}
+                              </p>
+                              <p className="mt-1 text-xs font-medium text-white/60">
+                                {entry.newSessionsLastWindow} new sessions,{" "}
+                                {entry.actionCountLastWindow} actions
+                              </p>
+                              {entry.isBlocked ? (
+                                <p className="mt-1 text-xs font-medium text-amber-100/90">
+                                  {entry.blockReason ?? "Timed out"} until{" "}
+                                  {formatTimeoutEnd(entry.blockedUntil)}
+                                </p>
+                              ) : null}
+                            </div>
+
+                            <button
+                              className={`shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold transition ${
+                                entry.isBlocked
+                                  ? "border border-emerald-300/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/18"
+                                  : "border border-amber-300/20 bg-amber-300/10 text-amber-50 hover:bg-amber-300/18"
+                              }`}
+                              data-ui-control="true"
+                              disabled={isBusy || isConfigBlocked}
+                              onClick={() =>
+                                entry.isBlocked
+                                  ? void handleClearIpTimeout(entry.ip)
+                                  : void handleBlockIp(entry.ip)
+                              }
+                              type="button"
+                            >
+                              {isConfigBlocked
+                                ? "Config"
+                                : isBusy
+                                ? "Working..."
+                                : entry.isBlocked
+                                  ? "Clear"
+                                  : "Block 24h"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm font-medium text-white/65">
+                    No recent IP spikes.
+                  </p>
+                )}
               </div>
 
               <p

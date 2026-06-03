@@ -71,6 +71,30 @@ export type ServerStateResponse = {
   snapshot: ServerGameSnapshot;
 };
 
+export type ServerIpActivitySnapshot = {
+  actionCountLastWindow: number;
+  blockReason: string | null;
+  blockedUntil: number | null;
+  ip: string;
+  isBlocked: boolean;
+  newSessionsLastWindow: number;
+};
+
+export type ServerIpModerationSnapshot = {
+  activeBlockedIps: number;
+  hotIps: ServerIpActivitySnapshot[];
+};
+
+export type ServerIpTimeoutRequest = {
+  durationMinutes?: number;
+  ip: string;
+};
+
+export type ServerIpTimeoutResponse = {
+  moderation: ServerIpModerationSnapshot;
+  ok: true;
+};
+
 export type ServerStatsSnapshot = {
   actions: {
     averageLatencyMs: number;
@@ -94,5 +118,6 @@ export type ServerStatsSnapshot = {
     peakConnections: number;
     totalConnections: number;
   };
+  moderation: ServerIpModerationSnapshot;
   uptimeSeconds: number;
 };

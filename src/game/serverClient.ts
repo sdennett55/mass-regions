@@ -10,6 +10,7 @@ import {
 import { sharedTownNeighbors } from "./townNeighbors";
 import type { PlayerAction } from "./types";
 import type {
+  ServerIpTimeoutResponse,
   ServerActionResponse,
   ServerGameSnapshot,
   ServerStatsSnapshot,
@@ -212,6 +213,46 @@ export async function fetchServerStats(
   });
 
   return parseJsonResponse<ServerStatsSnapshot>(response);
+}
+
+export async function createServerIpTimeout(
+  ip: string,
+  adminStatsToken: string,
+  durationMinutes?: number,
+) {
+  const response = await fetch(buildGameServerUrl("api/admin/ip-timeouts").toString(), {
+    body: JSON.stringify({
+      durationMinutes,
+      ip,
+    }),
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      [ADMIN_STATS_TOKEN_HEADER]: adminStatsToken,
+    },
+    method: "POST",
+  });
+
+  return parseJsonResponse<ServerIpTimeoutResponse>(response);
+}
+
+export async function clearServerIpTimeout(
+  ip: string,
+  adminStatsToken: string,
+) {
+  const encodedIp = encodeURIComponent(ip);
+  const response = await fetch(
+    buildGameServerUrl(`api/admin/ip-timeouts/${encodedIp}`).toString(),
+    {
+      credentials: "include",
+      headers: {
+        [ADMIN_STATS_TOKEN_HEADER]: adminStatsToken,
+      },
+      method: "DELETE",
+    },
+  );
+
+  return parseJsonResponse<ServerIpTimeoutResponse>(response);
 }
 
 export function createInitialServerSnapshot(now = Date.now()): ServerGameSnapshot {

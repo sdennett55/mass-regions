@@ -9,12 +9,15 @@ import type { PlayerAction } from "../../src/game/types.ts"
 
 import { serverConfig } from "./config.ts"
 import { TerritoryGameStore } from "./gameStore.ts"
+import { IpModerationTracker } from "./ipModeration.ts"
 import { ServerPersistence } from "./persistence.ts"
 import { RuntimeStatsTracker } from "./runtimeStats.ts"
 import { AnonymousSessionManager } from "./sessions.ts"
 import type {
   ServerActionRequest,
   ServerGameEvent,
+  ServerIpTimeoutRequest,
+  ServerIpTimeoutResponse,
   ServerStateResponse,
 } from "./protocol.ts"
 
@@ -24,6 +27,13 @@ const persistence = new ServerPersistence(serverConfig.databasePath)
 const store = new TerritoryGameStore(persistence)
 const runtimeStats = new RuntimeStatsTracker()
 const sessionManager = new AnonymousSessionManager()
+const ipModeration = new IpModerationTracker({
+  blockedIps: serverConfig.ipTimeoutBlockedIps,
+  maxNewSessions: serverConfig.ipTimeoutMaxNewSessions,
+  newSessionWindowMs: serverConfig.ipTimeoutNewSessionWindowMs,
+  persistence,
+  timeoutDurationMs: serverConfig.ipTimeoutDurationMs,
+})
 
 const stateLimiter = rateLimit({
   legacyHeaders: false,
@@ -138,6 +148,24 @@ function isPlayerAction(value: unknown): value is PlayerAction {
   return false
 }
 
+function getClientIp(request: Request) {
+  return request.ip || request.socket.remoteAddress || "unknown"
+}
+
+function getStatsSnapshot(now = Date.now()) {
+  return runtimeStats.getSnapshot(now, ipModeration.getSnapshot(now))
+}
+
+function getIpBlockedMessage(blockReason: string | null) {
+  return blockReason === "Too many new sessions from this network."
+    ? "Too many fresh sessions came from this network, so actions are temporarily paused."
+    : "This network is temporarily timed out. Try again later."
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
+}
+
 app.get("/health", (_request, response) => {
   response.json({
     ok: true,
@@ -156,7 +184,74 @@ app.get("/api/stats", statsLimiter, (request, response) => {
     return
   }
 
-  response.json(runtimeStats.getSnapshot())
+  response.json(getStatsSnapshot())
+})
+
+app.post(
+  "/api/admin/ip-timeouts",
+  statsLimiter,
+  (
+    request: Request,
+    response: Response<ServerIpTimeoutResponse | { error: string }>,
+  ) => {
+    if (!serverConfig.adminStatsToken) {
+      response.status(404).json({ error: "Admin stats are unavailable." })
+      return
+    }
+
+    if (!hasValidAdminStatsToken(request)) {
+      response.status(401).json({ error: "Admin token required." })
+      return
+    }
+
+    const { durationMinutes, ip } = (request.body ?? {}) as Partial<ServerIpTimeoutRequest>
+    if (!isNonEmptyString(ip)) {
+      response.status(400).json({ error: "A valid IP address is required." })
+      return
+    }
+
+    const timeoutDurationMinutes = Number(durationMinutes)
+    const resolvedDurationMs =
+      Number.isFinite(timeoutDurationMinutes) && timeoutDurationMinutes > 0
+        ? timeoutDurationMinutes * 60 * 1000
+        : serverConfig.ipTimeoutDurationMs
+
+    ipModeration.blockIp(ip.trim(), resolvedDurationMs)
+    console.warn(
+      `[moderation] admin timed out ${ip.trim()} for ${Math.round(
+        resolvedDurationMs / 60000,
+      )} minutes`,
+    )
+    response.json({
+      moderation: ipModeration.getSnapshot(),
+      ok: true,
+    })
+  },
+)
+
+app.delete("/api/admin/ip-timeouts/:ip", statsLimiter, (request, response) => {
+  if (!serverConfig.adminStatsToken) {
+    response.status(404).json({ error: "Admin stats are unavailable." })
+    return
+  }
+
+  if (!hasValidAdminStatsToken(request)) {
+    response.status(401).json({ error: "Admin token required." })
+    return
+  }
+
+  const rawIp = request.params.ip
+  if (!isNonEmptyString(rawIp)) {
+    response.status(400).json({ error: "A valid IP address is required." })
+    return
+  }
+
+  ipModeration.unblockIp(rawIp.trim())
+  console.warn(`[moderation] admin cleared timeout for ${rawIp.trim()}`)
+  response.json({
+    moderation: ipModeration.getSnapshot(),
+    ok: true,
+  })
 })
 
 app.get(
@@ -164,7 +259,28 @@ app.get(
   stateLimiter,
   (request, response: Response<ServerStateResponse | { error: string }>) => {
     runtimeStats.recordStateRequest()
-    const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
+    const clientIp = getClientIp(request)
+    const existingSession = sessionManager.resolveExistingSession(request, response)
+    const ipBlockStatus = ipModeration.getBlockStatus(clientIp)
+
+    if (!existingSession && ipBlockStatus.isBlocked) {
+      response.status(429).json({
+        error: getIpBlockedMessage(ipBlockStatus.blockReason),
+      })
+      return
+    }
+
+    const resolvedSession = existingSession ?? sessionManager.resolveSession(request, response)
+    if (resolvedSession.isNewSession) {
+      const newSessionResult = ipModeration.recordNewSession(clientIp)
+      if (newSessionResult.autoBlocked) {
+        console.warn(
+          `[moderation] auto-timed-out ${clientIp} for session churn`,
+        )
+      }
+    }
+
+    const { sessionId, sessionToken } = resolvedSession
     const shouldRefillActionPoints =
       !serverConfig.isProduction &&
       (isTruthyQueryParam(request.query.refillActionPoints) ||
@@ -190,7 +306,21 @@ app.post(
   actionLimiter,
   (request: Request, response) => {
     const startedAt = performance.now()
+    const clientIp = getClientIp(request)
     const { action } = (request.body ?? {}) as Partial<ServerActionRequest>
+    const ipBlockStatus = ipModeration.getBlockStatus(clientIp)
+
+    if (ipBlockStatus.isBlocked) {
+      runtimeStats.recordAction({
+        durationMs: performance.now() - startedAt,
+        ok: false,
+        timestamp: Date.now(),
+      })
+      response.status(429).json({
+        error: getIpBlockedMessage(ipBlockStatus.blockReason),
+      })
+      return
+    }
 
     if (!isPlayerAction(action)) {
       runtimeStats.recordAction({
@@ -207,6 +337,14 @@ app.post(
     if (!resolvedSession) {
       runtimeStats.recordSessionSyncError()
       const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
+      if (sessionId) {
+        const newSessionResult = ipModeration.recordNewSession(clientIp)
+        if (newSessionResult.autoBlocked) {
+          console.warn(
+            `[moderation] auto-timed-out ${clientIp} for session churn`,
+          )
+        }
+      }
       runtimeStats.recordAction({
         durationMs: performance.now() - startedAt,
         ok: false,
@@ -223,6 +361,9 @@ app.post(
 
     const { sessionId, sessionToken } = resolvedSession
     const result = store.applyPlayerAction(sessionId, action)
+    if (result.ok) {
+      ipModeration.recordAction(clientIp)
+    }
     runtimeStats.recordAction({
       durationMs: performance.now() - startedAt,
       ok: result.ok,
