@@ -1447,6 +1447,9 @@ function InteractiveMap() {
                   ? `You have ${actionPoints} points to spend. +1 point every ${actionPointRegenMinutes} min.`
                   : "Syncing your points..."}
               </p>
+              <p className="mt-2 text-[11px] font-medium text-slate-400">
+                Keep it fun: spammers may be temporarily timed out.
+              </p>
             </div>
 
             <button

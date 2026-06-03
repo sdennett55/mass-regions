@@ -2,7 +2,7 @@ export const SEASON_DURATION_MS = 7 * 24 * 60 * 60 * 1000
 export const SEASON_EPOCH_MS = Date.UTC(2026, 4, 25, 0, 0, 0, 0)
 
 export const PLAYER_MAX_ACTION_POINTS = 20
-export const PLAYER_ACTION_REGEN_INTERVAL_MS = 10 * 60 * 1000
+export const PLAYER_ACTION_REGEN_INTERVAL_MS = 60 * 1000
 export const PLAYER_ACTION_COST = 1
 
 export const CAPTURE_POINTS_TO_CAPTURE = 5
