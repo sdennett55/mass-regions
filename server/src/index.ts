@@ -175,6 +175,34 @@ function getPlayerProfileForRequest(request: Request) {
   return getPlayerProfileForIp(getClientIp(request))
 }
 
+function revertBlockedSessionCaptures(
+  sessionIds: string[],
+  reason: string,
+  now = Date.now(),
+) {
+  const revertedCaptureCount = store.revertCapturesForSessions(sessionIds, now)
+  if (revertedCaptureCount > 0) {
+    console.warn(
+      `[moderation] reverted ${revertedCaptureCount} captures across ${sessionIds.length} sessions after ${reason}`,
+    )
+  }
+
+  return revertedCaptureCount
+}
+
+const persistedIpBlocks = persistence.loadIpBlocks()
+
+for (const blockedIp of new Set([
+  ...serverConfig.ipTimeoutBlockedIps,
+  ...persistedIpBlocks.map(({ ip }) => ip),
+])) {
+  const persistedBlock = persistedIpBlocks.find(({ ip }) => ip === blockedIp)
+  const blockedSessionIds = persistedBlock?.record.sessionIds ?? []
+  if (blockedSessionIds.length > 0) {
+    revertBlockedSessionCaptures(blockedSessionIds, "startup blocked IP sync")
+  }
+}
+
 function getStatsSnapshot(now = Date.now()) {
   return runtimeStats.getSnapshot(now, ipModeration.getSnapshot(now))
 }
@@ -239,11 +267,12 @@ app.post(
         ? timeoutDurationMinutes * 60 * 1000
         : serverConfig.ipTimeoutDurationMs
 
-    const didBlockIp = ipModeration.blockIp(ip.trim(), resolvedDurationMs)
-    if (!didBlockIp) {
+    const blockResult = ipModeration.blockIp(ip.trim(), resolvedDurationMs)
+    if (!blockResult.ok) {
       response.status(409).json({ error: "Pro user IPs are exempt from timeouts." })
       return
     }
+    revertBlockedSessionCaptures(blockResult.blockedSessionIds, "admin timeout")
     console.warn(
       `[moderation] admin timed out ${ip.trim()} for ${Math.round(
         resolvedDurationMs / 60000,
@@ -292,6 +321,10 @@ app.get(
     const ipBlockStatus = ipModeration.getBlockStatus(clientIp)
 
     if (!existingSession && ipBlockStatus.isBlocked) {
+      revertBlockedSessionCaptures(
+        ipBlockStatus.blockedSessionIds,
+        "existing block on state request",
+      )
       response.status(429).json({
         error: getIpBlockedMessage(ipBlockStatus.blockReason),
       })
@@ -300,8 +333,12 @@ app.get(
 
     const resolvedSession = existingSession ?? sessionManager.resolveSession(request, response)
     if (resolvedSession.isNewSession) {
-      const newSessionResult = ipModeration.recordNewSession(clientIp)
+      const newSessionResult = ipModeration.recordNewSession(clientIp, resolvedSession.sessionId)
       if (newSessionResult.autoBlocked) {
+        revertBlockedSessionCaptures(
+          newSessionResult.blockedSessionIds,
+          "session churn auto-timeout",
+        )
         console.warn(
           `[moderation] auto-timed-out ${clientIp} for session churn`,
         )
@@ -336,10 +373,18 @@ app.post(
     const startedAt = performance.now()
     const clientIp = getClientIp(request)
     const playerProfile = getPlayerProfileForIp(clientIp)
+    const existingSession = sessionManager.resolveExistingSession(request, response)
     const { action } = (request.body ?? {}) as Partial<ServerActionRequest>
     const ipBlockStatus = ipModeration.getBlockStatus(clientIp)
 
     if (ipBlockStatus.isBlocked) {
+      const blockedSessionIds = existingSession
+        ? [...new Set([...ipBlockStatus.blockedSessionIds, existingSession.sessionId])]
+        : ipBlockStatus.blockedSessionIds
+      revertBlockedSessionCaptures(
+        blockedSessionIds,
+        "existing block on action request",
+      )
       runtimeStats.recordAction({
         durationMs: performance.now() - startedAt,
         ok: false,
@@ -361,14 +406,16 @@ app.post(
       return
     }
 
-    const resolvedSession = sessionManager.resolveExistingSession(request, response)
-
-    if (!resolvedSession) {
+    if (!existingSession) {
       runtimeStats.recordSessionSyncError()
       const { sessionId, sessionToken } = sessionManager.resolveSession(request, response)
       if (sessionId) {
-        const newSessionResult = ipModeration.recordNewSession(clientIp)
+        const newSessionResult = ipModeration.recordNewSession(clientIp, sessionId)
         if (newSessionResult.autoBlocked) {
+          revertBlockedSessionCaptures(
+            newSessionResult.blockedSessionIds,
+            "session churn auto-timeout",
+          )
           console.warn(
             `[moderation] auto-timed-out ${clientIp} for session churn`,
           )
@@ -388,10 +435,16 @@ app.post(
       return
     }
 
-    const { sessionId, sessionToken } = resolvedSession
-    const result = store.applyPlayerAction(sessionId, action, Date.now(), playerProfile)
+    const { sessionId, sessionToken } = existingSession
+    const result = store.applyPlayerAction(
+      sessionId,
+      action,
+      Date.now(),
+      playerProfile,
+      clientIp,
+    )
     if (result.ok) {
-      ipModeration.recordAction(clientIp)
+      ipModeration.recordAction(clientIp, sessionId)
     }
     runtimeStats.recordAction({
       durationMs: performance.now() - startedAt,

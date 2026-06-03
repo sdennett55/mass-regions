@@ -17,6 +17,7 @@ import type {
   PlayerProfile,
   PlayerState,
   SeasonState,
+  TownBattleState,
   TownNeighbors,
 } from "../../src/game/types.ts"
 
@@ -27,7 +28,7 @@ import type {
   ServerSeasonResetEvent,
   ServerWorldUpdateEvent,
 } from "./protocol.ts"
-import type { ServerPersistence } from "./persistence.ts"
+import type { CaptureHistoryRecord, ServerPersistence } from "./persistence.ts"
 
 type StoreListener = (event: ServerGameEvent) => void
 
@@ -42,6 +43,20 @@ function arePlayerStatesEqual(
     left.maxActionPoints === right.maxActionPoints &&
     left.actionPointRegenIntervalMs === right.actionPointRegenIntervalMs
   )
+}
+
+function buildRevertedTownState(
+  town: TownBattleState,
+  record: CaptureHistoryRecord,
+): TownBattleState {
+  return {
+    ...town,
+    captureProgress: 0,
+    contestingRegion: null,
+    currentRegion: record.previousRegion,
+    isContested: false,
+    lastCapturedAt: record.previousLastCapturedAt ?? undefined,
+  }
 }
 
 export class TerritoryGameStore {
@@ -184,11 +199,73 @@ export class TerritoryGameStore {
     return snapshot
   }
 
+  revertCapturesForSessions(sessionIds: string[], now = Date.now()) {
+    this.ensureSeason(now)
+    const captureRecords = this.persistence.loadUnrevertedCapturesForSessions(
+      sessionIds,
+      this.seasonState.seasonId,
+    )
+
+    if (!captureRecords.length) {
+      return 0
+    }
+
+    const nextTowns = {
+      ...this.seasonState.towns,
+    }
+    const changedTowns: ServerWorldUpdateEvent["changedTowns"] = []
+    const revertedCaptureIds: number[] = []
+
+    for (const captureRecord of captureRecords) {
+      const currentTown = nextTowns[captureRecord.townName]
+      if (
+        !currentTown ||
+        currentTown.isContested ||
+        currentTown.currentRegion !== captureRecord.newRegion ||
+        currentTown.lastCapturedAt !== captureRecord.capturedAt
+      ) {
+        continue
+      }
+
+      const revertedTown = buildRevertedTownState(currentTown, captureRecord)
+      nextTowns[captureRecord.townName] = revertedTown
+      changedTowns.push({
+        town: revertedTown,
+        townName: captureRecord.townName,
+      })
+      revertedCaptureIds.push(captureRecord.id)
+    }
+
+    if (!revertedCaptureIds.length) {
+      return 0
+    }
+
+    this.persistence.markCapturesReverted(revertedCaptureIds, now)
+    this.seasonState = {
+      ...this.seasonState,
+      towns: nextTowns,
+    }
+
+    const worldUpdateEvent: ServerWorldUpdateEvent = {
+      type: "world-update",
+      changedTowns,
+      capturedTownCount: this.getCapturedTownCountForSeason(this.seasonState, now),
+      contestedTownCount: this.getContestedTownCount(this.seasonState),
+      controlCounts: getRegionControlCountsFromSeason(this.seasonState),
+      revision: this.revision,
+      serverTime: now,
+    }
+    this.emitChange(worldUpdateEvent)
+
+    return revertedCaptureIds.length
+  }
+
   applyPlayerAction(
     playerId: string,
     action: PlayerAction,
     now = Date.now(),
     profile?: Partial<PlayerProfile> | null,
+    actorIp?: string | null,
   ): ServerActionResponse {
     this.ensureSeason(now)
     const player = this.ensurePlayer(playerId, now, profile)
@@ -219,7 +296,30 @@ export class TerritoryGameStore {
 
     this.playerStates.set(playerId, nextPlayerState)
     this.persistence.savePlayerState(playerId, nextPlayerState)
+    const previousTown = this.seasonState.towns[action.townName]
     this.seasonState = actionResult.season
+
+    if (
+      action.type === "invade" &&
+      actorIp &&
+      previousTown &&
+      actionResult.town &&
+      typeof actionResult.town.lastCapturedAt === "number" &&
+      actionResult.town.lastCapturedAt === now &&
+      previousTown.currentRegion !== actionResult.town.currentRegion
+    ) {
+      this.persistence.recordCapture({
+        capturedAt: actionResult.town.lastCapturedAt,
+        ip: actorIp,
+        newRegion: actionResult.town.currentRegion,
+        previousLastCapturedAt: previousTown.lastCapturedAt ?? null,
+        previousRegion: previousTown.currentRegion,
+        seasonId: this.seasonState.seasonId,
+        sessionId: playerId,
+        townName: action.townName,
+      })
+    }
+
     const worldUpdateEvent: ServerWorldUpdateEvent = {
       type: "world-update",
       changedTowns: actionResult.town

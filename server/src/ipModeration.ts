@@ -9,10 +9,12 @@ const HOT_IP_LIMIT = 8
 
 type IpEntry = {
   actionTimestamps: number[]
+  blockedSessionIds: string[]
   blockReason: string | null
   blockedUntil: number | null
   isManualBlock: boolean
   newSessionTimestamps: number[]
+  sessionLastSeenAt: Map<string, number>
 }
 
 type IpModerationConfig = {
@@ -26,6 +28,7 @@ type IpModerationConfig = {
 
 type IpBlockStatus = {
   blockReason: string | null
+  blockedSessionIds: string[]
   blockedUntil: number | null
   isBlocked: boolean
 }
@@ -58,6 +61,7 @@ export class IpModerationTracker {
 
       const entry = this.getEntry(ip)
       entry.blockReason = record.reason
+      entry.blockedSessionIds = record.sessionIds ?? []
       entry.blockedUntil = blockedUntil
       entry.isManualBlock = record.reason === "Timed out by admin."
     }
@@ -76,15 +80,37 @@ export class IpModerationTracker {
     if (!entry) {
       entry = {
         actionTimestamps: [],
+        blockedSessionIds: [],
         blockReason: null,
         blockedUntil: null,
         isManualBlock: false,
         newSessionTimestamps: [],
+        sessionLastSeenAt: new Map<string, number>(),
       }
       this.entries.set(ip, entry)
     }
 
     return entry
+  }
+
+  private getSessionActivityWindowMs() {
+    return Math.max(ACTION_ACTIVITY_WINDOW_MS, this.config.newSessionWindowMs)
+  }
+
+  private noteSessionActivity(entry: IpEntry, sessionId: string, now: number) {
+    entry.sessionLastSeenAt.set(sessionId, now)
+  }
+
+  private getRecentSessionIds(entry: IpEntry, now: number) {
+    const sessionActivityWindowMs = this.getSessionActivityWindowMs()
+
+    for (const [sessionId, lastSeenAt] of entry.sessionLastSeenAt.entries()) {
+      if (now - lastSeenAt >= sessionActivityWindowMs) {
+        entry.sessionLastSeenAt.delete(sessionId)
+      }
+    }
+
+    return [...entry.sessionLastSeenAt.keys()]
   }
 
   private pruneEntry(ip: string, now: number) {
@@ -95,6 +121,7 @@ export class IpModerationTracker {
 
     if (this.isExemptIp(ip)) {
       if (isFiniteTimestamp(entry.blockedUntil) || entry.blockReason !== null) {
+        entry.blockedSessionIds = []
         entry.blockedUntil = null
         entry.blockReason = null
         entry.isManualBlock = false
@@ -108,10 +135,12 @@ export class IpModerationTracker {
     entry.newSessionTimestamps = entry.newSessionTimestamps.filter(
       (timestamp) => now - timestamp < this.config.newSessionWindowMs,
     )
+    this.getRecentSessionIds(entry, now)
 
     const blockedUntil =
       typeof entry.blockedUntil === "number" ? entry.blockedUntil : null
     if (blockedUntil !== null && blockedUntil <= now) {
+      entry.blockedSessionIds = []
       entry.blockedUntil = null
       entry.blockReason = null
       entry.isManualBlock = false
@@ -135,6 +164,7 @@ export class IpModerationTracker {
     if (!entry) {
       return {
         blockReason: null,
+        blockedSessionIds: [],
         blockedUntil: null,
         isBlocked: false,
       }
@@ -147,6 +177,7 @@ export class IpModerationTracker {
     if (!isTimedBlockActive) {
       return {
         blockReason: null,
+        blockedSessionIds: [],
         blockedUntil: null,
         isBlocked: false,
       }
@@ -154,6 +185,7 @@ export class IpModerationTracker {
 
     return {
       blockReason: entry.blockReason,
+      blockedSessionIds: entry.blockedSessionIds,
       blockedUntil: entry.blockedUntil,
       isBlocked: entry.isManualBlock || isTimedBlockActive,
     }
@@ -163,6 +195,7 @@ export class IpModerationTracker {
     if (this.isExemptIp(ip)) {
       return {
         blockReason: null,
+        blockedSessionIds: [],
         blockedUntil: null,
         isBlocked: false,
       }
@@ -171,6 +204,7 @@ export class IpModerationTracker {
     if (this.config.blockedIps.has(ip)) {
       return {
         blockReason: "Blocked by server configuration.",
+        blockedSessionIds: [],
         blockedUntil: null,
         isBlocked: true,
       }
@@ -179,15 +213,17 @@ export class IpModerationTracker {
     return this.getDynamicBlockStatus(ip, now)
   }
 
-  recordNewSession(ip: string, now = Date.now()) {
+  recordNewSession(ip: string, sessionId: string, now = Date.now()) {
     if (this.isExemptIp(ip)) {
       const entry = this.getEntry(ip)
+      this.noteSessionActivity(entry, sessionId, now)
       entry.newSessionTimestamps.push(now)
       this.pruneEntry(ip, now)
 
       return {
         autoBlocked: false,
         blockReason: null,
+        blockedSessionIds: [],
       }
     }
 
@@ -195,10 +231,12 @@ export class IpModerationTracker {
       return {
         autoBlocked: false,
         blockReason: "Blocked by server configuration.",
+        blockedSessionIds: [],
       }
     }
 
     const entry = this.getEntry(ip)
+    this.noteSessionActivity(entry, sessionId, now)
     entry.newSessionTimestamps.push(now)
     this.pruneEntry(ip, now)
 
@@ -207,6 +245,7 @@ export class IpModerationTracker {
       return {
         autoBlocked: false,
         blockReason: null,
+        blockedSessionIds: [],
       }
     }
 
@@ -214,13 +253,16 @@ export class IpModerationTracker {
       return {
         autoBlocked: false,
         blockReason: null,
+        blockedSessionIds: [],
       }
     }
 
     const blockedUntil =
       typeof nextEntry.blockedUntil === "number" ? nextEntry.blockedUntil : null
     const alreadyBlocked = blockedUntil !== null && blockedUntil > now
+    const blockedSessionIds = this.getRecentSessionIds(nextEntry, now)
 
+    nextEntry.blockedSessionIds = blockedSessionIds
     nextEntry.blockedUntil = Math.max(
       nextEntry.blockedUntil ?? 0,
       now + this.config.timeoutDurationMs,
@@ -230,17 +272,20 @@ export class IpModerationTracker {
       blockedUntil: nextEntry.blockedUntil,
       createdAt: now,
       reason: nextEntry.blockReason,
+      sessionIds: blockedSessionIds,
     })
 
     return {
       autoBlocked: !alreadyBlocked,
       blockReason: nextEntry.blockReason,
+      blockedSessionIds,
     }
   }
 
-  recordAction(ip: string, now = Date.now()) {
+  recordAction(ip: string, sessionId: string, now = Date.now()) {
     if (this.isExemptIp(ip)) {
       const entry = this.getEntry(ip)
+      this.noteSessionActivity(entry, sessionId, now)
       entry.actionTimestamps.push(now)
       this.pruneEntry(ip, now)
       return
@@ -251,6 +296,7 @@ export class IpModerationTracker {
     }
 
     const entry = this.getEntry(ip)
+    this.noteSessionActivity(entry, sessionId, now)
     entry.actionTimestamps.push(now)
     this.pruneEntry(ip, now)
   }
@@ -258,10 +304,15 @@ export class IpModerationTracker {
   blockIp(ip: string, durationMs: number, now = Date.now()) {
     if (this.isExemptIp(ip)) {
       this.unblockIp(ip)
-      return false
+      return {
+        blockedSessionIds: [],
+        ok: false,
+      }
     }
 
     const entry = this.getEntry(ip)
+    const blockedSessionIds = this.getRecentSessionIds(entry, now)
+    entry.blockedSessionIds = blockedSessionIds
     entry.blockedUntil = now + durationMs
     entry.blockReason = "Timed out by admin."
     entry.isManualBlock = true
@@ -269,9 +320,13 @@ export class IpModerationTracker {
       blockedUntil: entry.blockedUntil,
       createdAt: now,
       reason: entry.blockReason,
+      sessionIds: blockedSessionIds,
     })
 
-    return true
+    return {
+      blockedSessionIds,
+      ok: true,
+    }
   }
 
   unblockIp(ip: string) {
@@ -280,6 +335,7 @@ export class IpModerationTracker {
       return
     }
 
+    entry.blockedSessionIds = []
     entry.blockReason = null
     entry.blockedUntil = null
     entry.isManualBlock = false

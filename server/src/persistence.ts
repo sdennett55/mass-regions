@@ -2,7 +2,12 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import type { PlayerState, SeasonState } from "../../src/game/types.ts";
+import type {
+  PlayerState,
+  RegionName,
+  SeasonState,
+  TownName,
+} from "../../src/game/types.ts";
 
 export type FingerprintRecord = {
   issuedAtTimestamps: number[];
@@ -13,6 +18,27 @@ export type IpBlockRecord = {
   blockedUntil: number | null;
   createdAt: number;
   reason: string;
+  sessionIds?: string[];
+};
+
+export type CaptureHistoryRecord = {
+  capturedAt: number;
+  id: number;
+  ip: string;
+  newRegion: RegionName;
+  previousLastCapturedAt: number | null;
+  previousRegion: RegionName;
+  revertedAt: number | null;
+  seasonId: string;
+  sessionId: string;
+  townName: TownName;
+};
+
+export type PersistedIpBlock = {
+  ip: string;
+  record: IpBlockRecord & {
+    sessionIds: string[];
+  };
 };
 
 function isPlayerState(value: unknown): value is PlayerState {
@@ -54,7 +80,10 @@ function isIpBlockRecord(value: unknown): value is IpBlockRecord {
   return (
     (typeof candidate.blockedUntil === "number" || candidate.blockedUntil === null) &&
     typeof candidate.createdAt === "number" &&
-    typeof candidate.reason === "string"
+    typeof candidate.reason === "string" &&
+    (Array.isArray(candidate.sessionIds)
+      ? candidate.sessionIds.every((sessionId) => typeof sessionId === "string")
+      : typeof candidate.sessionIds === "undefined")
   );
 }
 
@@ -103,6 +132,22 @@ export class ServerPersistence {
         ip TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS capture_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        season_id TEXT NOT NULL,
+        town_name TEXT NOT NULL,
+        previous_region TEXT NOT NULL,
+        new_region TEXT NOT NULL,
+        previous_last_captured_at INTEGER,
+        captured_at INTEGER NOT NULL,
+        reverted_at INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_capture_history_ip_season_reverted
+      ON capture_history (ip, season_id, reverted_at, captured_at);
     `);
   }
 
@@ -195,7 +240,7 @@ export class ServerPersistence {
       .run(fingerprint, JSON.stringify(record));
   }
 
-  loadIpBlocks() {
+  loadIpBlocks(): PersistedIpBlock[] {
     const rows = this.database
       .prepare("SELECT ip, value FROM ip_blocks")
       .all() as Array<{ ip: string; value: string }>;
@@ -209,10 +254,13 @@ export class ServerPersistence {
 
         return {
           ip: row.ip,
-          record,
+          record: {
+            ...record,
+            sessionIds: record.sessionIds ?? [],
+          },
         };
       })
-      .filter((row): row is { ip: string; record: IpBlockRecord } => row !== null);
+      .filter((row): row is PersistedIpBlock => row !== null);
   }
 
   saveIpBlock(ip: string, record: IpBlockRecord) {
@@ -227,5 +275,145 @@ export class ServerPersistence {
 
   deleteIpBlock(ip: string) {
     this.database.prepare("DELETE FROM ip_blocks WHERE ip = ?").run(ip);
+  }
+
+  recordCapture(record: Omit<CaptureHistoryRecord, "id" | "revertedAt">) {
+    this.database
+      .prepare(`
+        INSERT INTO capture_history (
+          ip,
+          session_id,
+          season_id,
+          town_name,
+          previous_region,
+          new_region,
+          previous_last_captured_at,
+          captured_at,
+          reverted_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `)
+      .run(
+        record.ip,
+        record.sessionId,
+        record.seasonId,
+        record.townName,
+        record.previousRegion,
+        record.newRegion,
+        record.previousLastCapturedAt,
+        record.capturedAt,
+      );
+  }
+
+  loadUnrevertedCapturesForIp(ip: string, seasonId: string) {
+    const rows = this.database
+      .prepare(`
+        SELECT
+          id,
+          ip,
+          session_id,
+          season_id,
+          town_name,
+          previous_region,
+          new_region,
+          previous_last_captured_at,
+          captured_at,
+          reverted_at
+        FROM capture_history
+        WHERE ip = ? AND season_id = ? AND reverted_at IS NULL
+        ORDER BY captured_at DESC, id DESC
+      `)
+      .all(ip, seasonId) as Array<{
+        captured_at: number;
+        id: number;
+        ip: string;
+        new_region: RegionName;
+        previous_last_captured_at: number | null;
+        previous_region: RegionName;
+        reverted_at: number | null;
+        season_id: string;
+        session_id: string;
+        town_name: TownName;
+      }>;
+
+    return rows.map((row) => ({
+      capturedAt: row.captured_at,
+      id: row.id,
+      ip: row.ip,
+      newRegion: row.new_region,
+      previousLastCapturedAt: row.previous_last_captured_at,
+      previousRegion: row.previous_region,
+      revertedAt: row.reverted_at,
+      seasonId: row.season_id,
+      sessionId: row.session_id,
+      townName: row.town_name,
+    }));
+  }
+
+  loadUnrevertedCapturesForSessions(sessionIds: string[], seasonId: string) {
+    if (!sessionIds.length) {
+      return [];
+    }
+
+    const uniqueSessionIds = [...new Set(sessionIds)];
+    const placeholders = uniqueSessionIds.map(() => "?").join(", ");
+    const rows = this.database
+      .prepare(`
+        SELECT
+          id,
+          ip,
+          session_id,
+          season_id,
+          town_name,
+          previous_region,
+          new_region,
+          previous_last_captured_at,
+          captured_at,
+          reverted_at
+        FROM capture_history
+        WHERE session_id IN (${placeholders}) AND season_id = ? AND reverted_at IS NULL
+        ORDER BY captured_at DESC, id DESC
+      `)
+      .all(...uniqueSessionIds, seasonId) as Array<{
+        captured_at: number;
+        id: number;
+        ip: string;
+        new_region: RegionName;
+        previous_last_captured_at: number | null;
+        previous_region: RegionName;
+        reverted_at: number | null;
+        season_id: string;
+        session_id: string;
+        town_name: TownName;
+      }>;
+
+    return rows.map((row) => ({
+      capturedAt: row.captured_at,
+      id: row.id,
+      ip: row.ip,
+      newRegion: row.new_region,
+      previousLastCapturedAt: row.previous_last_captured_at,
+      previousRegion: row.previous_region,
+      revertedAt: row.reverted_at,
+      seasonId: row.season_id,
+      sessionId: row.session_id,
+      townName: row.town_name,
+    }));
+  }
+
+  markCapturesReverted(captureIds: number[], revertedAt: number) {
+    if (!captureIds.length) {
+      return;
+    }
+
+    const updateStatement = this.database.prepare(`
+      UPDATE capture_history
+      SET reverted_at = ?
+      WHERE id = ?
+    `);
+
+    for (const captureId of captureIds) {
+      updateStatement.run(revertedAt, captureId);
+    }
   }
 }
