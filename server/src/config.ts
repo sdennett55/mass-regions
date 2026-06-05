@@ -11,6 +11,7 @@ const DEFAULT_IP_TIMEOUT_NEW_SESSION_WINDOW_MS = 15 * 60 * 1000
 const DEFAULT_IP_TIMEOUT_MAX_NEW_SESSIONS = 2
 const DEFAULT_PRO_PLAYER_MAX_ACTION_POINTS = 100
 const DEFAULT_PRO_PLAYER_REGEN_INTERVAL_MS = 1000
+const DEFAULT_HUMAN_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000
 
 type SessionCookieSameSite = "lax" | "strict" | "none"
 
@@ -125,6 +126,8 @@ const isProduction = process.env.NODE_ENV === "production"
 const adminStatsToken = process.env.ADMIN_STATS_TOKEN?.trim() || null
 const sessionSecret =
   process.env.SESSION_SECRET?.trim() || randomBytes(32).toString("hex")
+const turnstileSecretKey = process.env.TURNSTILE_SECRET_KEY?.trim() || null
+const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY?.trim() || null
 
 if (isProduction && !process.env.SESSION_SECRET?.trim()) {
   throw new Error("SESSION_SECRET must be set in production.")
@@ -133,6 +136,10 @@ if (isProduction && !process.env.SESSION_SECRET?.trim()) {
 export const serverConfig = {
   allowedOrigins,
   adminStatsToken,
+  humanVerificationTtlMs: parsePositiveInteger(
+    process.env.HUMAN_VERIFICATION_TTL_MS,
+    DEFAULT_HUMAN_VERIFICATION_TTL_MS,
+  ),
   isAllowedOrigin: createAllowedOriginChecker(allowedOrigins),
   isProduction,
   port: parsePort(process.env.PORT),
@@ -159,6 +166,9 @@ export const serverConfig = {
     isProduction ? "none" : "lax",
   ),
   sessionSecret,
+  turnstileEnabled: Boolean(turnstileSecretKey && turnstileSiteKey),
+  turnstileSecretKey,
+  turnstileSiteKey,
   ipTimeoutBlockedIps: parseBlockedIps(process.env.IP_TIMEOUT_BLOCKED_IPS),
   ipTimeoutDurationMs: parsePositiveInteger(
     process.env.IP_TIMEOUT_DURATION_MS,

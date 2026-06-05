@@ -32,6 +32,7 @@ import type { TownBattleState } from "../game/types";
 import AdminStatsPanel from "./AdminStatsPanel";
 import ActivityFeed from "./ActivityFeed";
 import GameHud from "./GameHud";
+import HumanVerificationModal from "./HumanVerificationModal";
 import MassachusettsMap from "./Map";
 import ShareButton from "./ShareButton";
 import TownBattlePanel from "./TownBattlePanel";
@@ -528,12 +529,18 @@ function InteractiveMap() {
     actionPointRegenIntervalMs,
     actionPoints,
     activityEvents,
+    cancelHumanVerification,
     capturedTownCount,
+    completeHumanVerification,
     contestedTownCount,
     controlCounts,
     getTownContext,
     hasLiveSnapshot,
+    humanVerificationError,
+    humanVerificationSiteKey,
     isActionPending,
+    isHumanVerificationPending,
+    isHumanVerificationPromptOpen,
     legendGroups,
     maxActionPoints,
     nextActionPointIn,
@@ -1636,6 +1643,15 @@ function InteractiveMap() {
           <AdminStatsPanel />
         </div>
       ) : null}
+
+      <HumanVerificationModal
+        errorMessage={humanVerificationError}
+        isOpen={isHumanVerificationPromptOpen}
+        isSubmitting={isHumanVerificationPending}
+        onCancel={cancelHumanVerification}
+        onVerify={completeHumanVerification}
+        siteKey={humanVerificationSiteKey}
+      />
 
       {isLegendOpen ? (
         <aside

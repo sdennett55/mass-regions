@@ -22,6 +22,13 @@ export type ServerGameSnapshot = {
   townVisualStates: Record<string, TownVisualState>;
 };
 
+export type ServerHumanVerificationState = {
+  enabled: boolean;
+  required: boolean;
+  siteKey: string | null;
+  verifiedUntil: number | null;
+};
+
 export type ServerActionRequest = {
   action: PlayerAction;
 };
@@ -55,18 +62,21 @@ export type ServerGameEvent = ServerWorldUpdateEvent | ServerSeasonResetEvent;
 
 export type ServerActionResponse =
   | {
+      humanVerification?: ServerHumanVerificationState;
       ok: true;
       sessionToken?: string;
       snapshot: ServerGameSnapshot;
     }
   | {
       error: string;
+      humanVerification?: ServerHumanVerificationState;
       ok: false;
       sessionToken?: string;
       snapshot: ServerGameSnapshot;
     };
 
 export type ServerStateResponse = {
+  humanVerification: ServerHumanVerificationState;
   sessionToken?: string;
   snapshot: ServerGameSnapshot;
 };
@@ -102,6 +112,23 @@ export type ServerIpCaptureRevertResponse = {
   ok: true;
   revertedCaptureCount: number;
 };
+
+export type ServerHumanVerificationRequest = {
+  token: string;
+};
+
+export type ServerHumanVerificationResponse =
+  | {
+      humanVerification: ServerHumanVerificationState;
+      ok: true;
+      sessionToken?: string;
+    }
+  | {
+      error: string;
+      humanVerification: ServerHumanVerificationState;
+      ok: false;
+      sessionToken?: string;
+    };
 
 export type ServerStatsSnapshot = {
   actions: {

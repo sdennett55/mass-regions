@@ -14,6 +14,7 @@ import type {
   ServerIpTimeoutResponse,
   ServerActionResponse,
   ServerGameSnapshot,
+  ServerHumanVerificationResponse,
   ServerStatsSnapshot,
   ServerStateResponse,
 } from "./serverProtocol";
@@ -181,6 +182,35 @@ export async function postServerAction(
   );
 
   const data = await parseJsonResponse<ServerActionResponse>(response);
+  persistSessionToken(data.sessionToken);
+  return data;
+}
+
+export async function postServerHumanVerification(
+  token: string,
+  sessionTokenOverride?: string | null,
+) {
+  const headers: HeadersInit = {
+    "Content-Type": "application/json",
+  };
+  const sessionToken = sessionTokenOverride ?? getStoredSessionToken();
+  if (sessionToken) {
+    headers[SESSION_TOKEN_HEADER] = sessionToken;
+  }
+
+  const response = await fetch(
+    buildGameServerUrl("api/human-verification").toString(),
+    {
+      body: JSON.stringify({
+        token,
+      }),
+      credentials: "include",
+      headers,
+      method: "POST",
+    },
+  );
+
+  const data = await parseJsonResponse<ServerHumanVerificationResponse>(response);
   persistSessionToken(data.sessionToken);
   return data;
 }

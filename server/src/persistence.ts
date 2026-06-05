@@ -133,6 +133,12 @@ export class ServerPersistence {
         value TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS session_human_verifications (
+        session_id TEXT PRIMARY KEY,
+        verified_until INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS capture_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ip TEXT NOT NULL,
@@ -275,6 +281,45 @@ export class ServerPersistence {
 
   deleteIpBlock(ip: string) {
     this.database.prepare("DELETE FROM ip_blocks WHERE ip = ?").run(ip);
+  }
+
+  loadHumanVerification(sessionId: string, now = Date.now()) {
+    const row = this.database
+      .prepare(`
+        SELECT verified_until
+        FROM session_human_verifications
+        WHERE session_id = ?
+      `)
+      .get(sessionId) as { verified_until: number } | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    if (!Number.isFinite(row.verified_until) || row.verified_until <= now) {
+      this.clearHumanVerification(sessionId);
+      return null;
+    }
+
+    return row.verified_until;
+  }
+
+  saveHumanVerification(sessionId: string, verifiedUntil: number, updatedAt: number) {
+    this.database
+      .prepare(`
+        INSERT INTO session_human_verifications (session_id, verified_until, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(session_id) DO UPDATE SET
+          verified_until = excluded.verified_until,
+          updated_at = excluded.updated_at
+      `)
+      .run(sessionId, verifiedUntil, updatedAt);
+  }
+
+  clearHumanVerification(sessionId: string) {
+    this.database
+      .prepare("DELETE FROM session_human_verifications WHERE session_id = ?")
+      .run(sessionId);
   }
 
   recordCapture(record: Omit<CaptureHistoryRecord, "id" | "revertedAt">) {

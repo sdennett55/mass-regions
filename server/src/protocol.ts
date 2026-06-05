@@ -1,6 +1,9 @@
 export type {
   ServerActionRequest,
   ServerActionResponse,
+  ServerHumanVerificationRequest,
+  ServerHumanVerificationResponse,
+  ServerHumanVerificationState,
   ServerIpCaptureRevertResponse,
   ServerGameEvent,
   ServerGameSnapshot,

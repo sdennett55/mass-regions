@@ -9,6 +9,7 @@ import type { PlayerAction, PlayerProfile } from "../../src/game/types.ts"
 
 import { serverConfig } from "./config.ts"
 import { TerritoryGameStore } from "./gameStore.ts"
+import { verifyTurnstileToken } from "./humanVerification.ts"
 import { IpModerationTracker } from "./ipModeration.ts"
 import { ServerPersistence } from "./persistence.ts"
 import { RuntimeStatsTracker } from "./runtimeStats.ts"
@@ -17,6 +18,9 @@ import type {
   ServerActionRequest,
   ServerIpCaptureRevertResponse,
   ServerGameEvent,
+  ServerHumanVerificationRequest,
+  ServerHumanVerificationResponse,
+  ServerHumanVerificationState,
   ServerIpTimeoutRequest,
   ServerIpTimeoutResponse,
   ServerStateResponse,
@@ -176,6 +180,34 @@ function getPlayerProfileForRequest(request: Request) {
   return getPlayerProfileForIp(getClientIp(request))
 }
 
+function isHumanVerificationEnabledForIp(ip: string) {
+  return serverConfig.turnstileEnabled && !isProPlayerIp(ip)
+}
+
+function getHumanVerificationState(
+  sessionId: string,
+  ip: string,
+  now = Date.now(),
+): ServerHumanVerificationState {
+  if (!isHumanVerificationEnabledForIp(ip)) {
+    return {
+      enabled: false,
+      required: false,
+      siteKey: null,
+      verifiedUntil: null,
+    }
+  }
+
+  const verifiedUntil = persistence.loadHumanVerification(sessionId, now)
+
+  return {
+    enabled: true,
+    required: verifiedUntil === null,
+    siteKey: serverConfig.turnstileSiteKey,
+    verifiedUntil,
+  }
+}
+
 function revertBlockedSessionCaptures(
   sessionIds: string[],
   reason: string,
@@ -224,6 +256,61 @@ app.get("/health", (_request, response) => {
     uptimeSeconds: Math.round(process.uptime()),
   })
 })
+
+app.post(
+  "/api/human-verification",
+  actionLimiter,
+  async (
+    request: Request,
+    response: Response<ServerHumanVerificationResponse | { error: string }>,
+  ) => {
+    const clientIp = getClientIp(request)
+    const resolvedSession = sessionManager.resolveSession(request, response)
+    const { sessionId, sessionToken } = resolvedSession
+    const humanVerificationState = getHumanVerificationState(sessionId, clientIp)
+
+    if (!humanVerificationState.enabled || !humanVerificationState.required) {
+      response.json({
+        humanVerification: humanVerificationState,
+        ok: true,
+        sessionToken,
+      })
+      return
+    }
+
+    const { token } = (request.body ?? {}) as Partial<ServerHumanVerificationRequest>
+    if (!isNonEmptyString(token)) {
+      response.json({
+        error: "Complete the human check to keep fighting.",
+        humanVerification: humanVerificationState,
+        ok: false,
+        sessionToken,
+      })
+      return
+    }
+
+    const verificationResult = await verifyTurnstileToken(token.trim(), clientIp)
+    if (!verificationResult.ok) {
+      response.json({
+        error: "Verification failed. Please try again.",
+        humanVerification: humanVerificationState,
+        ok: false,
+        sessionToken,
+      })
+      return
+    }
+
+    const now = Date.now()
+    const verifiedUntil = now + serverConfig.humanVerificationTtlMs
+    persistence.saveHumanVerification(sessionId, verifiedUntil, now)
+
+    response.json({
+      humanVerification: getHumanVerificationState(sessionId, clientIp, now),
+      ok: true,
+      sessionToken,
+    })
+  },
+)
 
 app.get("/api/stats", statsLimiter, (request, response) => {
   if (!serverConfig.adminStatsToken) {
@@ -393,14 +480,24 @@ app.get(
         isTruthyQueryParam(request.query.refillInfluence))
 
     if (shouldRefillActionPoints) {
-      response.json({
-        sessionToken,
-        snapshot: store.refillPlayerActionPoints(sessionId, Date.now(), playerProfile),
-      })
+    response.json({
+      humanVerification: getHumanVerificationState(
+        sessionId,
+        clientIp,
+        Date.now(),
+      ),
+      sessionToken,
+      snapshot: store.refillPlayerActionPoints(sessionId, Date.now(), playerProfile),
+    })
       return
     }
 
     response.json({
+      humanVerification: getHumanVerificationState(
+        sessionId,
+        clientIp,
+        Date.now(),
+      ),
       sessionToken,
       snapshot: store.getSnapshot(sessionId, Date.now(), playerProfile),
     })
@@ -477,6 +574,19 @@ app.post(
     }
 
     const { sessionId, sessionToken } = existingSession
+    const humanVerificationState = getHumanVerificationState(sessionId, clientIp, Date.now())
+    if (humanVerificationState.required) {
+      response.json({
+        error:
+          "Verify you're human to keep fighting. If you don't see the check, refresh the page.",
+        humanVerification: humanVerificationState,
+        ok: false,
+        sessionToken,
+        snapshot: store.getSnapshot(sessionId, Date.now(), playerProfile),
+      })
+      return
+    }
+
     const result = store.applyPlayerAction(
       sessionId,
       action,
@@ -494,6 +604,7 @@ app.post(
     })
     response.status(result.ok ? 200 : 409).json({
       ...result,
+      humanVerification: getHumanVerificationState(sessionId, clientIp, Date.now()),
       sessionToken,
     })
   },

@@ -19,9 +19,14 @@ import {
   fetchServerSnapshot,
   openServerEvents,
   postServerAction,
+  postServerHumanVerification,
 } from "./serverClient";
 import { sharedTownNeighbors } from "./townNeighbors";
-import type { ServerGameEvent, ServerGameSnapshot } from "./serverProtocol";
+import type {
+  ServerGameEvent,
+  ServerGameSnapshot,
+  ServerHumanVerificationState,
+} from "./serverProtocol";
 import type {
   ActivityEvent,
   PlayerAction,
@@ -42,6 +47,16 @@ const SILENT_AUDIO_SAMPLE_RATE = 8_000;
 const SILENT_AUDIO_SAMPLE_COUNT = SILENT_AUDIO_SAMPLE_RATE / 20;
 type BrowserAudioContext = AudioContext;
 type BrowserAudioElement = HTMLAudioElement;
+type QueuedHumanVerificationAction = PlayerAction | null;
+
+function createInitialHumanVerificationState(): ServerHumanVerificationState {
+  return {
+    enabled: false,
+    required: false,
+    siteKey: null,
+    verifiedUntil: null,
+  };
+}
 
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
@@ -304,6 +319,12 @@ export function useTerritoryGame() {
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [isActionPending, setIsActionPending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [humanVerification, setHumanVerification] =
+    useState<ServerHumanVerificationState>(createInitialHumanVerificationState);
+  const [queuedHumanVerificationAction, setQueuedHumanVerificationAction] =
+    useState<QueuedHumanVerificationAction>(null);
+  const [humanVerificationError, setHumanVerificationError] = useState<string | null>(null);
+  const [isHumanVerificationPending, setIsHumanVerificationPending] = useState(false);
 
   const actionInFlightRef = useRef(false);
   const audioContextRef = useRef<BrowserAudioContext | null>(null);
@@ -325,6 +346,9 @@ export function useTerritoryGame() {
   const audioDecodePromiseRef = useRef<Promise<void> | null>(null);
   const audioRecoveryPromiseRef = useRef<Promise<boolean> | null>(null);
   const audioNeedsForegroundRecoveryRef = useRef(false);
+  const queuedHumanVerificationActionRef = useRef<QueuedHumanVerificationAction>(
+    queuedHumanVerificationAction,
+  );
 
   useEffect(() => {
     clockAnchorRef.current = clockAnchor;
@@ -337,6 +361,10 @@ export function useTerritoryGame() {
   useEffect(() => {
     sessionTokenRef.current = sessionToken;
   }, [sessionToken]);
+
+  useEffect(() => {
+    queuedHumanVerificationActionRef.current = queuedHumanVerificationAction;
+  }, [queuedHumanVerificationAction]);
 
   const clearDecodedAudioBuffers = useCallback(() => {
     attackAudioBufferRef.current = null;
@@ -654,6 +682,18 @@ export function useTerritoryGame() {
     setClientNow(receivedAt);
   }, []);
 
+  const queueHumanVerification = useCallback((action: PlayerAction) => {
+    queuedHumanVerificationActionRef.current = action;
+    setQueuedHumanVerificationAction(action);
+    setHumanVerificationError(null);
+  }, []);
+
+  const clearQueuedHumanVerification = useCallback(() => {
+    queuedHumanVerificationActionRef.current = null;
+    setQueuedHumanVerificationAction(null);
+    setHumanVerificationError(null);
+  }, []);
+
   const applyWorldEvent = useCallback((event: ServerGameEvent) => {
     const currentSnapshot = snapshotRef.current;
 
@@ -714,11 +754,13 @@ export function useTerritoryGame() {
       refreshInFlightRef.current = true;
 
       try {
-        const { sessionToken: nextSessionToken, snapshot: nextSnapshot } = await fetchServerSnapshot(
-          options?.signal,
-          sessionTokenRef.current,
-        );
+        const {
+          humanVerification: nextHumanVerification,
+          sessionToken: nextSessionToken,
+          snapshot: nextSnapshot,
+        } = await fetchServerSnapshot(options?.signal, sessionTokenRef.current);
         setSessionToken(nextSessionToken ?? null);
+        setHumanVerification(nextHumanVerification);
         applySnapshot(nextSnapshot);
       } catch (error) {
         if (!isAbortError(error) && !options?.suppressError) {
@@ -942,6 +984,20 @@ export function useTerritoryGame() {
         .length,
     [townVisualStates],
   );
+  const isHumanVerificationRequired = useMemo(() => {
+    if (!humanVerification.enabled) {
+      return false;
+    }
+
+    if (humanVerification.required) {
+      return true;
+    }
+
+    return (
+      typeof humanVerification.verifiedUntil === "number" &&
+      humanVerification.verifiedUntil <= serverNow
+    );
+  }, [humanVerification, serverNow]);
 
   useEffect(() => {
     if (nextTownVisualExpiryAt === null) {
@@ -959,7 +1015,7 @@ export function useTerritoryGame() {
     };
   }, [nextTownVisualExpiryAt, serverNow]);
 
-  const performAction = useCallback(
+  const sendAction = useCallback(
     async (action: PlayerAction) => {
       if (actionInFlightRef.current) {
         return;
@@ -986,9 +1042,18 @@ export function useTerritoryGame() {
         if (result.sessionToken) {
           setSessionToken(result.sessionToken);
         }
+        if (result.humanVerification) {
+          setHumanVerification(result.humanVerification);
+        }
         applySnapshot(result.snapshot);
 
         if (!result.ok) {
+          if (result.humanVerification?.required) {
+            queueHumanVerification(action);
+            setStatusMessage(null);
+            return;
+          }
+
           setStatusMessage(
             result.error === "No action points available."
               ? `No action points. +1 in ${formatDurationShort(
@@ -1030,7 +1095,78 @@ export function useTerritoryGame() {
         setIsActionPending(false);
       }
     },
-    [applySnapshot, initializeAudio, playSound, recoverAudioAfterForeground],
+    [
+      applySnapshot,
+      initializeAudio,
+      playSound,
+      queueHumanVerification,
+      recoverAudioAfterForeground,
+    ],
+  );
+
+  const performAction = useCallback(
+    async (action: PlayerAction) => {
+      if (isHumanVerificationPending) {
+        return;
+      }
+
+      if (isHumanVerificationRequired) {
+        queueHumanVerification(action);
+        setStatusMessage(null);
+        return;
+      }
+
+      await sendAction(action);
+    },
+    [
+      isHumanVerificationPending,
+      isHumanVerificationRequired,
+      queueHumanVerification,
+      sendAction,
+    ],
+  );
+
+  const completeHumanVerification = useCallback(
+    async (token: string) => {
+      if (isHumanVerificationPending) {
+        return;
+      }
+
+      setIsHumanVerificationPending(true);
+
+      try {
+        const result = await postServerHumanVerification(
+          token,
+          sessionTokenRef.current,
+        );
+
+        if (result.sessionToken) {
+          setSessionToken(result.sessionToken);
+        }
+
+        setHumanVerification(result.humanVerification);
+
+        if (!result.ok) {
+          setHumanVerificationError(result.error);
+          return;
+        }
+
+        const queuedAction = queuedHumanVerificationActionRef.current;
+        clearQueuedHumanVerification();
+        setStatusMessage(null);
+
+        if (queuedAction) {
+          await sendAction(queuedAction);
+        }
+      } catch (error) {
+        setHumanVerificationError(
+          getErrorMessage(error, "Could not verify that request right now."),
+        );
+      } finally {
+        setIsHumanVerificationPending(false);
+      }
+    },
+    [clearQueuedHumanVerification, isHumanVerificationPending, sendAction],
   );
 
   const getTownBattleState = useCallback(
@@ -1070,12 +1206,18 @@ export function useTerritoryGame() {
     actionPoints: resolvedPlayerState.actionPoints,
     activityEvents,
     capturedTownCount,
+    cancelHumanVerification: clearQueuedHumanVerification,
+    completeHumanVerification,
     contestedTownCount: snapshot.contestedTownCount,
     controlCounts: snapshot.controlCounts,
     getTownBattleState,
     getTownContext,
     hasLiveSnapshot,
+    humanVerificationError,
+    humanVerificationSiteKey: humanVerification.siteKey,
     isActionPending,
+    isHumanVerificationPending,
+    isHumanVerificationPromptOpen: queuedHumanVerificationAction !== null,
     legendGroups,
     maxActionPoints,
     nextActionPointIn,
