@@ -10,6 +10,7 @@ import {
   clearServerIpTimeout,
   createServerIpTimeout,
   fetchServerStats,
+  revertServerIpCaptures,
 } from "../game/serverClient";
 import type { ServerStatsSnapshot } from "../game/serverProtocol";
 
@@ -98,6 +99,18 @@ function formatTimeoutEnd(timestamp: number | null) {
   }).format(timestamp);
 }
 
+function formatActivityAt(timestamp: number | null) {
+  if (!timestamp) {
+    return "no recent activity";
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(timestamp);
+}
+
 type StatCardProps = {
   label: string;
   tone?: "neutral" | "good" | "warning";
@@ -129,7 +142,8 @@ function AdminStatsPanel() {
   );
   const [adminStatsTokenDraft, setAdminStatsTokenDraft] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [moderatingIp, setModeratingIp] = useState<string | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const [activeModerationActionKey, setActiveModerationActionKey] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     if (typeof window === "undefined") {
@@ -189,6 +203,7 @@ function AdminStatsPanel() {
           setAdminStatsToken(null);
           setStats(null);
           setLastUpdatedAt(null);
+          setNoticeMessage(null);
           setErrorMessage("Enter a valid admin token.");
           return;
         }
@@ -237,6 +252,7 @@ function AdminStatsPanel() {
     persistAdminStatsToken(trimmedToken);
     setAdminStatsToken(trimmedToken);
     setErrorMessage(null);
+    setNoticeMessage(null);
   };
 
   const handleClearAdminAccess = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -247,6 +263,7 @@ function AdminStatsPanel() {
     setStats(null);
     setLastUpdatedAt(null);
     setErrorMessage(null);
+    setNoticeMessage(null);
   };
 
   const handleBlockIp = async (ip: string) => {
@@ -254,7 +271,7 @@ function AdminStatsPanel() {
       return;
     }
 
-    setModeratingIp(ip);
+    setActiveModerationActionKey(`${ip}:block`);
     try {
       const result = await createServerIpTimeout(ip, adminStatsToken, 24 * 60);
       setStats((currentStats) =>
@@ -266,12 +283,14 @@ function AdminStatsPanel() {
           : currentStats,
       );
       setErrorMessage(null);
+      setNoticeMessage(`Timed out ${ip} for 24 hours.`);
     } catch (error) {
+      setNoticeMessage(null);
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to time out that IP.",
       );
     } finally {
-      setModeratingIp(null);
+      setActiveModerationActionKey(null);
     }
   };
 
@@ -280,7 +299,7 @@ function AdminStatsPanel() {
       return;
     }
 
-    setModeratingIp(ip);
+    setActiveModerationActionKey(`${ip}:clear`);
     try {
       const result = await clearServerIpTimeout(ip, adminStatsToken);
       setStats((currentStats) =>
@@ -292,12 +311,46 @@ function AdminStatsPanel() {
           : currentStats,
       );
       setErrorMessage(null);
+      setNoticeMessage(`Cleared the timeout for ${ip}.`);
     } catch (error) {
+      setNoticeMessage(null);
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to clear that timeout.",
       );
     } finally {
-      setModeratingIp(null);
+      setActiveModerationActionKey(null);
+    }
+  };
+
+  const handleRevertCaptures = async (ip: string) => {
+    if (!adminStatsToken) {
+      return;
+    }
+
+    setActiveModerationActionKey(`${ip}:revert`);
+    try {
+      const result = await revertServerIpCaptures(ip, adminStatsToken);
+      setStats((currentStats) =>
+        currentStats
+          ? {
+              ...currentStats,
+              moderation: result.moderation,
+            }
+          : currentStats,
+      );
+      setErrorMessage(null);
+      setNoticeMessage(
+        result.revertedCaptureCount > 0
+          ? `Reverted ${result.revertedCaptureCount} captured town${result.revertedCaptureCount === 1 ? "" : "s"} for ${ip}.`
+          : `No revertible captured towns were found for ${ip}.`,
+      );
+    } catch (error) {
+      setNoticeMessage(null);
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unable to revert captured towns.",
+      );
+    } finally {
+      setActiveModerationActionKey(null);
     }
   };
 
@@ -382,6 +435,12 @@ function AdminStatsPanel() {
           {errorMessage ? (
             <div className="rounded-2xl border border-amber-300/15 bg-amber-300/10 px-3 py-2 text-sm font-medium text-amber-50">
               {errorMessage}
+            </div>
+          ) : null}
+
+          {noticeMessage ? (
+            <div className="rounded-2xl border border-emerald-300/15 bg-emerald-300/10 px-3 py-2 text-sm font-medium text-emerald-50">
+              {noticeMessage}
             </div>
           ) : null}
 
@@ -481,10 +540,14 @@ function AdminStatsPanel() {
                 {stats.moderation.hotIps.length ? (
                   <div className="mt-3 space-y-2">
                     {stats.moderation.hotIps.map((entry) => {
-                      const isBusy = moderatingIp === entry.ip;
+                      const isBlocking = activeModerationActionKey === `${entry.ip}:block`;
+                      const isClearing = activeModerationActionKey === `${entry.ip}:clear`;
+                      const isReverting = activeModerationActionKey === `${entry.ip}:revert`;
+                      const isBusy = !!activeModerationActionKey?.startsWith(`${entry.ip}:`);
                       const isConfigBlocked =
                         entry.isBlocked && entry.blockedUntil === null;
                       const isHighActionIp = entry.actionCountLastWindow > 20;
+                      const canRevert = entry.rollbackSessionCount > 0;
                       return (
                         <div
                           key={entry.ip}
@@ -503,6 +566,10 @@ function AdminStatsPanel() {
                                 {entry.newSessionsLastWindow} new sessions,{" "}
                                 {entry.actionCountLastWindow} actions
                               </p>
+                              <p className="mt-1 text-xs font-medium text-white/50">
+                                {entry.rollbackSessionCount} tracked sessions, last seen{" "}
+                                {formatActivityAt(entry.lastActivityAt)}
+                              </p>
                               {entry.isBlocked ? (
                                 <p className="mt-1 text-xs font-medium text-amber-100/90">
                                   {entry.blockReason ?? "Timed out"} until{" "}
@@ -511,29 +578,43 @@ function AdminStatsPanel() {
                               ) : null}
                             </div>
 
-                            <button
-                              className={`shrink-0 rounded-2xl px-3 py-2 text-xs font-semibold transition ${
-                                entry.isBlocked
-                                  ? "border border-emerald-300/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/18"
-                                  : "border border-amber-300/20 bg-amber-300/10 text-amber-50 hover:bg-amber-300/18"
-                              }`}
-                              data-ui-control="true"
-                              disabled={isBusy || isConfigBlocked}
-                              onClick={() =>
-                                entry.isBlocked
-                                  ? void handleClearIpTimeout(entry.ip)
-                                  : void handleBlockIp(entry.ip)
-                              }
-                              type="button"
-                            >
-                              {isConfigBlocked
-                                ? "Config"
-                                : isBusy
-                                ? "Working..."
-                                : entry.isBlocked
-                                  ? "Clear"
-                                  : "Block 24h"}
-                            </button>
+                            <div className="flex shrink-0 flex-col gap-2">
+                              {entry.isBlocked ? (
+                                <button
+                                  className="rounded-2xl border border-sky-300/20 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 transition hover:bg-sky-400/18 disabled:cursor-not-allowed disabled:opacity-60"
+                                  data-ui-control="true"
+                                  disabled={isBusy || !canRevert}
+                                  onClick={() => void handleRevertCaptures(entry.ip)}
+                                  type="button"
+                                >
+                                  {isReverting ? "Working..." : "Revert towns"}
+                                </button>
+                              ) : null}
+
+                              <button
+                                className={`rounded-2xl px-3 py-2 text-xs font-semibold transition ${
+                                  entry.isBlocked
+                                    ? "border border-emerald-300/20 bg-emerald-400/10 text-emerald-100 hover:bg-emerald-400/18"
+                                    : "border border-amber-300/20 bg-amber-300/10 text-amber-50 hover:bg-amber-300/18"
+                                } disabled:cursor-not-allowed disabled:opacity-60`}
+                                data-ui-control="true"
+                                disabled={isBusy || isConfigBlocked}
+                                onClick={() =>
+                                  entry.isBlocked
+                                    ? void handleClearIpTimeout(entry.ip)
+                                    : void handleBlockIp(entry.ip)
+                                }
+                                type="button"
+                              >
+                                {isConfigBlocked
+                                  ? "Config"
+                                  : isBlocking || isClearing
+                                    ? "Working..."
+                                    : entry.isBlocked
+                                      ? "Clear"
+                                      : "Block 24h"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );

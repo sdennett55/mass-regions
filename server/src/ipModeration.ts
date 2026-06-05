@@ -113,6 +113,30 @@ export class IpModerationTracker {
     return [...entry.sessionLastSeenAt.keys()]
   }
 
+  private getLastActivityAt(entry: IpEntry) {
+    let lastActivityAt: number | null = null
+
+    for (const timestamp of entry.actionTimestamps) {
+      if (lastActivityAt === null || timestamp > lastActivityAt) {
+        lastActivityAt = timestamp
+      }
+    }
+
+    for (const timestamp of entry.newSessionTimestamps) {
+      if (lastActivityAt === null || timestamp > lastActivityAt) {
+        lastActivityAt = timestamp
+      }
+    }
+
+    for (const timestamp of entry.sessionLastSeenAt.values()) {
+      if (lastActivityAt === null || timestamp > lastActivityAt) {
+        lastActivityAt = timestamp
+      }
+    }
+
+    return lastActivityAt
+  }
+
   private pruneEntry(ip: string, now: number) {
     const entry = this.entries.get(ip)
     if (!entry) {
@@ -150,6 +174,7 @@ export class IpModerationTracker {
     const shouldDelete =
       entry.actionTimestamps.length === 0 &&
       entry.newSessionTimestamps.length === 0 &&
+      entry.sessionLastSeenAt.size === 0 &&
       !isFiniteTimestamp(entry.blockedUntil)
 
     if (shouldDelete) {
@@ -343,6 +368,20 @@ export class IpModerationTracker {
     this.pruneEntry(ip, Date.now())
   }
 
+  getRollbackSessionIds(ip: string, now = Date.now()) {
+    if (this.isExemptIp(ip)) {
+      return []
+    }
+
+    this.pruneEntry(ip, now)
+    const entry = this.entries.get(ip)
+    if (!entry) {
+      return []
+    }
+
+    return [...new Set([...entry.blockedSessionIds, ...this.getRecentSessionIds(entry, now)])]
+  }
+
   getSnapshot(now = Date.now()): ServerIpModerationSnapshot {
     const hotIps: ServerIpActivitySnapshot[] = []
     const ips = new Set<string>([
@@ -369,21 +408,29 @@ export class IpModerationTracker {
         blockedUntil: blockStatus.blockedUntil,
         ip,
         isBlocked: blockStatus.isBlocked,
+        lastActivityAt: entry ? this.getLastActivityAt(entry) : null,
         newSessionsLastWindow: entry?.newSessionTimestamps.length ?? 0,
+        rollbackSessionCount: entry
+          ? new Set([...entry.blockedSessionIds, ...entry.sessionLastSeenAt.keys()]).size
+          : 0,
       })
     }
 
     hotIps.sort((left, right) => {
+      if (left.lastActivityAt !== right.lastActivityAt) {
+        return (right.lastActivityAt ?? 0) - (left.lastActivityAt ?? 0)
+      }
+
       if (left.isBlocked !== right.isBlocked) {
         return left.isBlocked ? -1 : 1
       }
 
-      if (left.newSessionsLastWindow !== right.newSessionsLastWindow) {
-        return right.newSessionsLastWindow - left.newSessionsLastWindow
-      }
-
       if (left.actionCountLastWindow !== right.actionCountLastWindow) {
         return right.actionCountLastWindow - left.actionCountLastWindow
+      }
+
+      if (left.newSessionsLastWindow !== right.newSessionsLastWindow) {
+        return right.newSessionsLastWindow - left.newSessionsLastWindow
       }
 
       return left.ip.localeCompare(right.ip)

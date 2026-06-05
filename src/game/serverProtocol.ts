@@ -77,7 +77,9 @@ export type ServerIpActivitySnapshot = {
   blockedUntil: number | null;
   ip: string;
   isBlocked: boolean;
+  lastActivityAt: number | null;
   newSessionsLastWindow: number;
+  rollbackSessionCount: number;
 };
 
 export type ServerIpModerationSnapshot = {
@@ -93,6 +95,12 @@ export type ServerIpTimeoutRequest = {
 export type ServerIpTimeoutResponse = {
   moderation: ServerIpModerationSnapshot;
   ok: true;
+};
+
+export type ServerIpCaptureRevertResponse = {
+  moderation: ServerIpModerationSnapshot;
+  ok: true;
+  revertedCaptureCount: number;
 };
 
 export type ServerStatsSnapshot = {

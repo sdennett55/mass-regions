@@ -15,6 +15,7 @@ import { RuntimeStatsTracker } from "./runtimeStats.ts"
 import { AnonymousSessionManager } from "./sessions.ts"
 import type {
   ServerActionRequest,
+  ServerIpCaptureRevertResponse,
   ServerGameEvent,
   ServerIpTimeoutRequest,
   ServerIpTimeoutResponse,
@@ -309,6 +310,46 @@ app.delete("/api/admin/ip-timeouts/:ip", statsLimiter, (request, response) => {
     ok: true,
   })
 })
+
+app.post(
+  "/api/admin/ip-timeouts/:ip/revert-captures",
+  statsLimiter,
+  (
+    request: Request,
+    response: Response<ServerIpCaptureRevertResponse | { error: string }>,
+  ) => {
+    if (!serverConfig.adminStatsToken) {
+      response.status(404).json({ error: "Admin stats are unavailable." })
+      return
+    }
+
+    if (!hasValidAdminStatsToken(request)) {
+      response.status(401).json({ error: "Admin token required." })
+      return
+    }
+
+    const rawIp = request.params.ip
+    if (!isNonEmptyString(rawIp)) {
+      response.status(400).json({ error: "A valid IP address is required." })
+      return
+    }
+
+    const ip = rawIp.trim()
+    const rollbackSessionIds = ipModeration.getRollbackSessionIds(ip)
+    const revertedCaptureCount = revertBlockedSessionCaptures(
+      rollbackSessionIds,
+      "manual admin rollback",
+    )
+    console.warn(
+      `[moderation] admin manually reverted ${revertedCaptureCount} captures for ${ip} across ${rollbackSessionIds.length} sessions`,
+    )
+    response.json({
+      moderation: ipModeration.getSnapshot(),
+      ok: true,
+      revertedCaptureCount,
+    })
+  },
+)
 
 app.get(
   "/api/state",

@@ -10,6 +10,7 @@ import {
 import { sharedTownNeighbors } from "./townNeighbors";
 import type { PlayerAction } from "./types";
 import type {
+  ServerIpCaptureRevertResponse,
   ServerIpTimeoutResponse,
   ServerActionResponse,
   ServerGameSnapshot,
@@ -253,6 +254,25 @@ export async function clearServerIpTimeout(
   );
 
   return parseJsonResponse<ServerIpTimeoutResponse>(response);
+}
+
+export async function revertServerIpCaptures(
+  ip: string,
+  adminStatsToken: string,
+) {
+  const encodedIp = encodeURIComponent(ip);
+  const response = await fetch(
+    buildGameServerUrl(`api/admin/ip-timeouts/${encodedIp}/revert-captures`).toString(),
+    {
+      credentials: "include",
+      headers: {
+        [ADMIN_STATS_TOKEN_HEADER]: adminStatsToken,
+      },
+      method: "POST",
+    },
+  );
+
+  return parseJsonResponse<ServerIpCaptureRevertResponse>(response);
 }
 
 export function createInitialServerSnapshot(now = Date.now()): ServerGameSnapshot {
